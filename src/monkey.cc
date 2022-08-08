@@ -318,7 +318,7 @@ namespace modes {
 int main() {
 	WINDOW* full_win = init_ncurses();
 
-	std::FILE *pfile = std::fopen("english.json", "r");
+	std::FILE *pfile = std::fopen("words/english.json", "r");
 	if (pfile == nullptr) {
 		std::cerr << "error: fatal: could not open \"english.json\"\n";
 		return 1;
@@ -332,7 +332,7 @@ int main() {
 	delete[] contents;
 
 	move(0, 0);
-	rapidjson::GenericValue<rapidjson::UTF8<>>::Array jwords = doc.GetArray();
+	JSONArray jwords = doc.GetArray();
 
 	std::random_device device{};
 	std::default_random_engine engine{device()};
@@ -349,7 +349,7 @@ int main() {
 				res = modes::timed(jwords, engine);
 				break;
 			case Mode::zen:
-				res = modes::zen();
+				res = modes::zen(full_win);
 				break;
 			case Mode::help:
 				res = modes::help();
