@@ -19,7 +19,7 @@
 using JSONArray = rapidjson::GenericValue<rapidjson::UTF8<>>::Array;
 
 /* const std::array<char, 4> block{"■"}; */
-constexpr double chars_per_word = 5.0;
+constexpr long double chars_per_word = 5.0;
 
 WINDOW* init_ncurses() {
 	WINDOW* wind = initscr();
@@ -205,6 +205,7 @@ namespace modes {
 
 		clear();
 		const long double wpm = static_cast<long double>(chars_done) * (60.0 / (time_given * chars_per_word));
+
 		addstr(std::to_string(chars_done).c_str());
 		refresh();
 
@@ -257,7 +258,6 @@ namespace modes {
 			refresh();
 		}
 
-		/* bad conversions but idc */
 		const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
 
 		return ask_again(broken, wpm);
@@ -289,7 +289,6 @@ namespace modes {
 			chin = getch();
 		}
 		
-		/* bad conversions but idc */
 		const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
 
 		return ask_again(false, wpm);
