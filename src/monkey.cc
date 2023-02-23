@@ -40,13 +40,13 @@ wchar_t get_unicode_cursor(std::uint32_t index) {
 
 
 struct Theme {
-    /* main is used for correct letters, caret is for caret color, sub is used for other text color, bg is background color, and cful_error is generally error color */
+    /* main is used for correct letters, caret is for caret color, text is used for slightly standout text, sub is used for other text color, bg is background color, and colorful_error is generally error color */
     ssto::color::rgb main, caret, sub, sub_alt, bg,
-        text, error, error_extra, cful_error, cful_error_extra; /* cful = colorful */
+        text, error, error_extra, colorful_error, colorful_error_extra; /* colorful = colorful */
 
     /* color pairs */
     std::int16_t main_pair, caret_pair, sub_pair, sub_alt_pair, bg_pair,
-        text_pair, error_pair, error_extra_pair, cful_error_pair, cful_error_extra_pair;
+        text_pair, error_pair, error_extra_pair, colorful_error_pair, colorful_error_extra_pair;
 };
 
 ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
@@ -54,13 +54,12 @@ ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
 }
 
 std::unordered_map<std::string, std::string> config = {
-    {"theme", ""}, {"name", ""}, {"lang", ""}, {"fancy_cursor", "true"}
+    {"theme", ""}, {"name", ""}, {"lang", ""}, {"hide_cursor", "false"}, {"fancy_cursor", "true"}
 };
 
 bool str_startswith(const std::string& src, const std::string& match) {
     return src.length() >= match.length() ? src.substr(0, match.length()) == match : false;
 }
-
 
 
 
@@ -157,8 +156,8 @@ void nccoff(std::int16_t pairid) {
     }
 }
 
-/* origin is for error msgs, report where it was called from */
-bool configstr_rd(std::string confs, const std::string& origin) {
+/* origin, name are for error msgs, report where it was called from and what was read */
+bool configstr_rd(std::string confs, const std::string& origin, const std::string& name) {
     std::transform(confs.begin(), confs.end(), confs.begin(), [](unsigned char c) { return std::tolower(c); });
 
     if (str_startswith(confs, "true") || str_startswith(confs, "y")) {
@@ -170,7 +169,7 @@ bool configstr_rd(std::string confs, const std::string& origin) {
     }
 
     deinit_ncurses();
-    std::cerr << "fatal: " << origin << ": conditional eval for \"" << confs << "\" failed\n";
+    std::cerr << "fatal: " << origin << ": conditional eval for \"" << confs << "\" reading " << name << " failed\n";
     exit(1);
 }
 
@@ -310,10 +309,10 @@ void assign_theme(const std::int16_t& base, Theme& theme) {
     theme.error_pair = base + 15;
     pair_init(base + 18, base + 19, base + 20, theme.error_extra, theme.bg);
     theme.error_extra_pair = base + 18;
-    pair_init(base + 21, base + 22, base + 23, theme.cful_error, theme.bg);
-    theme.cful_error_pair = base + 21;
-    pair_init(base + 24, base + 25, base + 26, theme.cful_error_extra, theme.bg);
-    theme.cful_error_extra_pair = base + 24;
+    pair_init(base + 21, base + 22, base + 23, theme.colorful_error, theme.bg);
+    theme.colorful_error_pair = base + 21;
+    pair_init(base + 24, base + 25, base + 26, theme.colorful_error_extra, theme.bg);
+    theme.colorful_error_extra_pair = base + 24;
 
     pair_init(base + 27, base + 28, base + 29, theme.bg, theme.bg);
     theme.bg_pair = base + 27;
@@ -334,32 +333,39 @@ void get_theme(const std::string& name, Theme& theme) {
     } else {
         fetch_file(theme_filename, "get_theme");
     }
+
     text = get_file_content(theme_filename);
 
-    /* parse this better, not all define all colors or in same order */
+    /* parse this better, not all css define in the same order */
     std::vector<std::string> fcolors, tcolors, colors;
-    std::size_t brace = text.find('}');
-    text = text.substr(0, brace);
+    std::size_t beginb = text.find(":root{") + 5, endb = text.find('}', beginb);
+    text = text.substr(beginb + 1, endb - beginb);
     split(text, ";", fcolors);
     for (const std::string& f : fcolors) {
-        split(f, "#", tcolors);
-        colors.push_back(tcolors[tcolors.size() - 1]);
+        std::size_t beginh = f.find('#') + 1, beginn = f.find("--") + 2;
+        std::string cname = f.substr(beginn, f.find(':') - 6 - beginn); /* 6 is width of "-color" suffix */
+        ssto::color::rgb color = strhex_to_rgb(f.substr(beginh));
+
+
+        if (cname == "bg") { theme.bg = color; }
+        else if (cname == "main") { theme.main = color; }
+        else if (cname == "caret") { theme.caret = color; }
+        else if (cname == "sub") { theme.sub = color; }
+        else if (cname == "sub-alt") { theme.sub_alt = color; }
+        else if (cname == "text") { theme.text = color; }
+        else if (cname == "error") { theme.error = color; }
+        else if (cname == "error-extra") { theme.error_extra = color; }
+        else if (cname == "colorful-error") { theme.colorful_error = color; }
+        else if (cname == "colorful-error-extra") { theme.colorful_error_extra = color; }
+        else {
+            deinit_ncurses();
+            std::cerr << "fatal: get_theme: parsing theme " << name << " failed near \"" << f << "\"\n";
+            exit(1);
+        }
+
     }
-    
-    if (colors.size() < 10) { return; }
-    theme.bg = strhex_to_rgb(colors[0]);
-    theme.main = strhex_to_rgb(colors[1]);
-    theme.caret = strhex_to_rgb(colors[2]);
-    theme.sub = strhex_to_rgb(colors[3]);
-    theme.sub_alt = strhex_to_rgb(colors[4]);
-    theme.text = strhex_to_rgb(colors[5]);
-    theme.error = strhex_to_rgb(colors[6]);
-    theme.error_extra = strhex_to_rgb(colors[7]);
-    theme.cful_error = strhex_to_rgb(colors[8]);
-    theme.cful_error_extra = strhex_to_rgb(colors[9]);
 
-
-    /* just hope that the following color ids don't conflict with current terminal */
+    /* just hope that the color ids don't conflict with terminal */
     static constexpr std::uint32_t base = 100;
     assign_theme(base, theme);
 }
@@ -380,7 +386,7 @@ void cleart(const Theme& theme) {
 chtype wait_for_char(chtype chr) {
     chtype cur = getch();
     while (cur != chr) {
-        if (chr != '\t' && cur != KEY_DL) { break; }
+        if (chr == '\t' || cur == KEY_DL) { break; }
         cur = getch();
     }
     return cur;
@@ -520,7 +526,7 @@ namespace modes {
         cleart(theme);
         std::shuffle(words.begin(), words.end(), engine);
 
-        const std::size_t viewable = std::min(100UL, words.size());
+        const std::size_t viewable = std::min(200UL, words.size());
         constexpr double time_given = 15.0; /* seconds */
 
         std::string out;
@@ -561,15 +567,17 @@ namespace modes {
                 }
                 if (chin != 0 && chin != chout) {}
             } while ((out.size() == i || chout == ' ') && (chin == 0 || chin != chout)); /* to allow checking at the same time we are expecting input: this is instead of threading */
+
             if (chin == chout) { chars_done++; }
             if (chin == '\t' || chin == KEY_DL) {
                 break;
             }
+
             if (chin != chout && has_color) { /* got it wrong */
                 attron(A_UNDERLINE);
-                nccon(theme.cful_error_pair);
+                nccon(theme.colorful_error_pair);
                 addch(chout);
-                nccoff(theme.cful_error_pair);
+                nccoff(theme.colorful_error_pair);
                 attroff(A_UNDERLINE);
             } else {
                 attron(A_BOLD);
@@ -592,6 +600,7 @@ namespace modes {
 
     State words(WINDOW *pwin, std::vector<std::string>& words, std::default_random_engine& engine, const Theme& theme) {
         cleart(theme);
+        nccon(theme.sub_pair);
         std::shuffle(words.begin(), words.end(), engine);
 
         constexpr int words_limit = 10;
@@ -601,7 +610,6 @@ namespace modes {
             out.append(words[i]).append(" ");
         }
         
-        out = out.substr(0, out.size() - 1);
 
         if (out.empty()) {
             mvaddstr(0, 0, "error: mode words: wordstring was empty");
@@ -609,6 +617,8 @@ namespace modes {
             getch();
             return State::cont;
         }
+
+        out.erase(out.end() - 1);
 
         addstr(out.c_str());
         move(0, 0);
@@ -618,57 +628,68 @@ namespace modes {
         for (char c : out) {
             buf.emplace_back(c, false);
         }
-        std::uint32_t p = 0;
+        std::int32_t p = 0;
 
         std::uint64_t start = 0;
         bool started = false;
         bool broken = false;
         std::int_fast32_t char_count = 0;
 
-        nccon(theme.main_pair);
 
         while (p < buf.size()) {
-            char_count++;
-            chtype chin = 0;
-            while ((chin = wait_for_char(buf[p].first))) {
-                if (chin == KEY_DL || chin == '\t') {
-                    broken = true;
-                    break;
-                }
-                if (chin == buf[p].first) { break; }
-                auto newbuf = buf;
+            chtype chin = getch();
+            if (chin == KEY_DL || chin == '\t') {
+                broken = true;
+                break;
+            }
+            
+            if (chin == '\n') {
+                continue;
+            }
+
+            if (chin != buf[p].first) {
+                buf.insert(p, std::make_pair(static_cast<char>(chin), true));
+                std::vector<std::pair<char, bool>> newbuf;
                 newbuf.assign(buf.begin(), buf.begin() + p);
                 newbuf.emplace_back(static_cast<char>(chin), true); /* true error */
-                for (auto it = buf.begin() + p; it != buf.end(); it++) {
-                    newbuf.push_back(*it);
-                }
+                newbuf.insert(newbuf.end(), buf.begin() + p, buf.end());
                 buf = newbuf;
+            } else {
+                char_count++;
             }
 
             p++;
-            if (broken) { break; }
             if (!started) {
                 started = true;
                 start = current_time();
             }
 
             cleart(theme);
+            std::int_fast32_t i = 0;
             for (auto [ch, err] : buf) {
                 if (err) {
-                    nccon(theme.cful_error_pair);
+                    nccon(theme.colorful_error_pair);
                     addch(ch);
-                    nccoff(theme.cful_error_pair);
-                } else {
+                    nccoff(theme.colorful_error_pair);
+                } else if (i < p) {
                     nccon(theme.main_pair);
                     addch(ch);
                     nccoff(theme.main_pair);
+                } else {
+                    nccon(theme.sub_pair);
+                    addch(ch);
+                    nccoff(theme.sub_pair);
                 }
+                i++;
             }
 
+            int x = 0, y = 0;
+            getyx(pwin, y, x);
+            move(y, p);
             refresh();
         }
 
-        nccoff(theme.main_pair);
+        nccoff(theme.sub_pair);
 
         const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
 
@@ -677,7 +698,7 @@ namespace modes {
 
     State zen(WINDOW *pwin, const Theme& theme) {
         cleart(theme);
-        nccon(theme.sub_pair);
+        nccon(theme.main_pair);
         std::uint_fast32_t char_count = 0;
         std::uint64_t start = 0;
         std::uint16_t curx = 0;
@@ -707,7 +728,7 @@ namespace modes {
             
             refresh();
         }
-        nccoff(theme.sub_pair);
+        nccoff(theme.main_pair);
         
         const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
 
@@ -786,6 +807,9 @@ int main() {
             return 1;
         }
     }
+
+    bool hc = configstr_rd(config["hide_cursor"], "main", "hide_cursor");
+    bool fc = configstr_rd(config["fancy_cursor"], "main", "fancy_cursor");
 
     Theme theme{};
     get_theme(config["theme"], theme);
