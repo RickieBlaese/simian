@@ -34,7 +34,7 @@ const std::string CONFIG_FILENAME = "main.conf";
 
 /* but remember to move cursor to output if index !! */
 wchar_t get_unicode_cursor(std::uint32_t index) {
-    const static std::wstring cs = L"█▉▊▋▌▍▎▏";
+    const static std::wstring cs = L"█▉▊▋▌▍▎▏"; /* 100 ms for one char ? 6.25 ms per cursor */
     return cs[7 - (index % 8)];
 }
 
@@ -54,8 +54,15 @@ ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
 }
 
 std::unordered_map<std::string, std::string> config = {
-    {"theme", ""}, {"name", ""}, {"lang", ""}
+    {"theme", ""}, {"name", ""}, {"lang", ""}, {"fancy_cursor", "true"}
 };
+
+bool str_startswith(const std::string& src, const std::string& match) {
+    return src.length() >= match.length() ? src.substr(0, match.length()) == match : false;
+}
+
+
+
 
 ssto::color::rgb strhex_to_rgb(const std::string& hexv) {
     std::uint16_t r = 0, g = 0, b = 0;
@@ -140,6 +147,23 @@ void nccoff(std::int16_t pairid) {
     }
 }
 
+/* origin is for error msgs, report where it was called from */
+bool configstr_rd(std::string confs, const std::string& origin) {
+    std::transform(confs.begin(), confs.end(), confs.begin(), [](unsigned char c) { return std::tolower(c); });
+
+    if (str_startswith(confs, "true") || str_startswith(confs, "y")) {
+        return true;
+    }
+
+    if (str_startswith(confs, "false") || str_startswith(confs, "n")) {
+        return false;
+    }
+
+    deinit_ncurses();
+    std::cerr << "\nerror: " << origin << " conditional eval for \"" << confs << "\" failed\n";
+    exit(1);
+}
+
 /* will fetch from monkeytype if not exist locally */
 /* filename should not have beginning */
 /* origin is where it is called from for errors */
@@ -164,6 +188,17 @@ void fetch_file(const std::string& filename, const std::string& origin) {
         std::cerr << "\nerror: " << origin << " fetch for " << filename << " failed with status " << resp->status << '\n';
         exit(1);
     }
+
+    std::string text = resp->body;
+    if (text.substr(0, 9) == "<!doctype") { /* returned nice looking html 404 page */
+        deinit_ncurses();
+        std::cerr << "\nerror: " << origin << " fetch for " << filename << " failed with status 400\n";
+        exit(1);
+    }
+
+    std::ofstream outfile(filename);
+    outfile << text;
+    outfile.close();
 }
 
 std::string get_file_content(const std::string& filename) {
@@ -197,8 +232,11 @@ void get_quotes(std::vector<std::string>& outs, Quote size) {
     std::fclose(pfile);
     delete[] contents;
     std::int32_t group_begin = doc["groups"][size][0].GetInt(), group_end = doc["groups"][size][1].GetInt();
-    for (std::int_fast32_t i = group_begin; i <= group_end; i++) {
-        outs.emplace_back(doc["quotes"][i]["text"].GetString());
+    for (const auto& quote : doc["quotes"].GetArray()) {
+        const rapidjson::SizeType len = quote["text"].GetStringLength();
+        if (len >= group_begin || len < group_end) {
+            outs.emplace_back(quote["text"].GetString());
+        }
     }
 }
 
@@ -211,7 +249,7 @@ void get_words(std::vector<std::string>& outs) {
     char *contents = new char[fsize];
     rapidjson::FileReadStream frs(pfile, contents, fsize);
     doc.ParseStream(frs);
-    for (const rapidjson::GenericValue<rapidjson::UTF8<>>& word : doc.GetArray()) {
+    for (const auto& word : doc["words"].GetArray()) {
         outs.emplace_back(word.GetString());
     }
     std::fclose(pfile);
@@ -274,7 +312,6 @@ void assign_theme(const std::int16_t& base, Theme& theme) {
 
 
 void get_theme(const std::string& name, Theme& theme) {
-
     const std::string theme_filename = fmt::format("themes/{}.css", name);
     fetch_file(theme_filename, "get_theme");
     std::string text = get_file_content(theme_filename);
@@ -460,7 +497,7 @@ namespace modes {
         cleart(theme);
         std::shuffle(words.begin(), words.end(), engine);
 
-        constexpr int viewable = 100;
+        const std::size_t viewable = std::min(100UL, words.size());
         constexpr double time_given = 15.0; /* seconds */
 
         std::string out;
@@ -735,7 +772,7 @@ int main() {
 
     std::vector<std::string> words, quotes;
     get_words(words);
-    get_quotes(quotes, Quote::szshort);
+    /* get_quotes(quotes, Quote::szshort); */
 
     nccon(theme.sub_pair);
     move(0, 0);
