@@ -50,7 +50,7 @@ struct Theme {
 };
 
 ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
-    return ssto::color::rgb{static_cast<std::uint16_t>(((hexv >> 16) & 0xFF) / 255.0), static_cast<std::uint16_t>(((hexv >> 8) & 0xFF) / 255.0), static_cast<std::uint16_t>((hexv & 0xFF) / 255.0)};
+    return ssto::color::rgb{static_cast<std::uint16_t>(std::round(((hexv >> 16) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round(((hexv >> 8) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round((hexv & 0xFF) / 255.0))};
 }
 
 std::unordered_map<std::string, std::string> config = {
@@ -66,14 +66,24 @@ bool str_startswith(const std::string& src, const std::string& match) {
 
 ssto::color::rgb strhex_to_rgb(const std::string& hexv) {
     std::uint16_t r = 0, g = 0, b = 0;
+    ssto::color::rgb ret{};
+    std::uint8_t res = 0;
+
+    /* no idea why but r, g, b are all one lower than they should be here after reading */
     if (hexv.length() == 3) {
-        std::uint8_t res = std::sscanf(hexv.c_str(), "%hx%hx%hx", &r, &g, &b);
-        if (res != 3) { return ssto::color::rgb{0, 0, 0}; }
-        return ssto::color::rgb{r, g, b};
+        res = std::sscanf(hexv.c_str(), "%1hx%1hx%1hx", &r, &g, &b);
+        ret.r = r * 17 + 1;
+        ret.g = g * 17 + 1;
+        ret.b = b * 17 + 1;
+    } else if (hexv.length() == 6) {
+        res = std::sscanf(hexv.c_str(), "%2hx%2hx%2hx", &r, &g, &b);
+        ret.r = r + 1;
+        ret.g = g + 1;
+        ret.b = b + 1;
     }
-    std::uint8_t res = std::sscanf(hexv.c_str(), "%2hx%2hx%2hx", &r, &g, &b);
-    if (res != 3) { return ssto::color::rgb{0, 0, 0}; }
-    return ssto::color::rgb{r, g, b};
+    if (res != 3) { return {0, 0, 0}; }
+
+    return ret;
 }
 
 enum State : unsigned int {
@@ -121,8 +131,8 @@ void split(const std::string& s, const std::string& delim, std::vector<std::stri
 
 void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const ssto::color::rgb& fg, const ssto::color::rgb& bg) {
     static constexpr double m = 125.0 / 32.0; /* init_color accepts rgb from 0 to 1000 */
-    init_color(cid2, static_cast<std::int16_t>(fg.r * m), static_cast<std::int16_t>(fg.g * m), static_cast<std::int16_t>(fg.b * m));
-    init_color(cid3, static_cast<std::int16_t>(bg.r * m), static_cast<std::int16_t>(bg.g * m), static_cast<std::int16_t>(bg.b * m));
+    init_color(cid2, static_cast<std::int16_t>(std::round(fg.r * m)), static_cast<std::int16_t>(std::round(fg.g * m)), static_cast<std::int16_t>(std::round(fg.b * m)));
+    init_color(cid3, static_cast<std::int16_t>(std::round(bg.r * m)), static_cast<std::int16_t>(std::round(bg.g * m)), static_cast<std::int16_t>(std::round(bg.b * m)));
     init_pair(pairid, cid2, cid3); 
 }
 
@@ -155,12 +165,12 @@ bool configstr_rd(std::string confs, const std::string& origin) {
         return true;
     }
 
-    if (str_startswith(confs, "false") || str_startswith(confs, "n")) {
+    if (str_startswith(confs, "false") || str_startswith(confs, "no")) {
         return false;
     }
 
     deinit_ncurses();
-    std::cerr << "\nerror: " << origin << " conditional eval for \"" << confs << "\" failed\n";
+    std::cerr << "fatal: " << origin << ": conditional eval for \"" << confs << "\" failed\n";
     exit(1);
 }
 
@@ -179,20 +189,20 @@ void fetch_file(const std::string& filename, const std::string& origin) {
         std::stringstream s;
         s << resp.error();
         deinit_ncurses();
-        std::cerr << "\nerror: " << origin << " fetch for " << filename << " failed with httplib error " << s.str() << '\n';
+        std::cerr << "fatal: " << origin << ": fetch for " << filename << " failed with httplib error " << s.str() << '\n';
         exit(1);
     }
 
     if (resp->status != 200) {
         deinit_ncurses();
-        std::cerr << "\nerror: " << origin << " fetch for " << filename << " failed with status " << resp->status << '\n';
+        std::cerr << "fatal: " << origin << ": fetch for " << filename << " failed with status " << resp->status << '\n';
         exit(1);
     }
 
     std::string text = resp->body;
     if (text.substr(0, 9) == "<!doctype") { /* returned nice looking html 404 page */
         deinit_ncurses();
-        std::cerr << "\nerror: " << origin << " fetch for " << filename << " failed with status 400\n";
+        std::cerr << "fatal: " << origin << ": fetch for " << filename << " failed with status 400\n";
         exit(1);
     }
 
@@ -313,9 +323,20 @@ void assign_theme(const std::int16_t& base, Theme& theme) {
 
 void get_theme(const std::string& name, Theme& theme) {
     const std::string theme_filename = fmt::format("themes/{}.css", name);
-    fetch_file(theme_filename, "get_theme");
-    std::string text = get_file_content(theme_filename);
+    std::string text;
 
+    if (name == "custom") { /* we do not want to fetch */
+        if (!file_exists(theme_filename)) {
+            deinit_ncurses();
+            std::cerr << "fatal: get_theme: custom theme custom.css file does not exist\n";
+            exit(1);
+        }
+    } else {
+        fetch_file(theme_filename, "get_theme");
+    }
+    text = get_file_content(theme_filename);
+
+    /* parse this better, not all define all colors or in same order */
     std::vector<std::string> fcolors, tcolors, colors;
     std::size_t brace = text.find('}');
     text = text.substr(0, brace);
@@ -440,9 +461,11 @@ Mode ask_mode(WINDOW *pwin, const Theme& theme) {
         nccon(theme.sub_pair);
         addstr("monkey see");
         addnewline(pwin);
+        nccon(theme.text_pair);
         attron(A_BOLD);
         addstr("monkeytype");
         attroff(A_BOLD);
+        nccoff(theme.text_pair);
         addnewline(pwin);
         addstr("mode [");
         attron(A_UNDERLINE);
@@ -727,7 +750,7 @@ int main() {
     std::ifstream config_file(CONFIG_FILENAME);
     if (!config_file.is_open()) {
         deinit_ncurses();
-        std::cerr << "fatal: failed to open config file " << CONFIG_FILENAME << '\n';
+        std::cerr << "fatal: main: failed to open config file " << CONFIG_FILENAME << '\n';
         return 1;
     }
 
@@ -759,7 +782,7 @@ int main() {
     for (const std::string& option_name : {"theme", "lang"}) {
         if (config[option_name].empty()) {
             deinit_ncurses();
-            std::cerr << "fatal: " << CONFIG_FILENAME << " config " << option_name << " not set (\"" << option_name << "=...\")\n";
+            std::cerr << "fatal: main: " << CONFIG_FILENAME << " config " << option_name << " not set (\"" << option_name << "=...\")\n";
             return 1;
         }
     }

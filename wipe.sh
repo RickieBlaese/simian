@@ -1,1 +1,1 @@
-rm languages/* quotes/* themes/*
+rm -f languages/* quotes/* themes/*
