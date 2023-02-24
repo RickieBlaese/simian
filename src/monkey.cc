@@ -35,8 +35,8 @@ const std::string CONFIG_FILENAME = "main.conf";
 
 /* but remember to move cursor to output if animating 2nd half !! */
 wchar_t get_unicode_cursor(std::uint32_t index) {
-    const static std::wstring cs = L"█▉▊▋▌▍▎▏"; /* 100 ms for one char ? 6.25 ms per cursor */
-    return cs[7 - (index % 8)];
+    const static std::wstring cs = L"▏▎▍▌▋▊▉█▕"; /* 100 ms for one char ? 6.25 ms per cursor */
+    return cs[index];
 }
 
 
@@ -656,6 +656,7 @@ namespace modes {
         std::int_fast32_t char_count = 0;
 
 
+        /* putting off total rewrite with nonblocking getch */
         while (p < buf.size()) {
             chtype chin = getch();
 
@@ -672,7 +673,7 @@ namespace modes {
             getyx(pwin, y, x);
             bool forwards = true;
             if (chin == KEY_BACKSPACE) {
-                if (x <= 0) { continue; }
+                if (p <= 0) { continue; }
                 if (buf[p - 1].second) {
                     buf.erase(buf.begin() + p - 1);
                 }
@@ -694,7 +695,7 @@ namespace modes {
             }
 
 
-            auto outch = [&theme](std::pair<char, bool> bchar, bool correct) {
+            auto outch = [&theme](const std::pair<char, bool>& bchar, bool correct) {
                 char ch = bchar.first;
                 bool err = bchar.second;
 
@@ -766,15 +767,15 @@ namespace modes {
 
             cleart(theme);
             std::int_fast32_t i = 0;
-            for (auto [ch, err] : buf) {
-                outch({ch, err}, i < p);
+            for (const std::pair<char, bool>& bchar : buf) {
+                outch(bchar, i < p);
                 i++;
             }
 
             move(y, p - 1);
-            printw("%lc", get_unicode_cursor(6));
+            printw("%lc", get_unicode_cursor(8));
             move(y, p - 1);
-            curs_set(1);
+            curs_set(0);
 
             refresh();
         }
