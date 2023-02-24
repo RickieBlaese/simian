@@ -15,7 +15,7 @@
 #include <menu.h>
 
 #include <sys/stat.h>
-#include <locale.h>
+#include <clocale>
 
 #include "/home/stole/rapidjson/include/rapidjson/document.h"
 #include "/home/stole/rapidjson/include/rapidjson/filereadstream.h"
@@ -694,14 +694,15 @@ namespace modes {
             }
 
 
-            cleart(theme);
-            std::int_fast32_t i = 0;
-            for (auto [ch, err] : buf) {
+            auto outch = [&theme](std::pair<char, bool> bchar, bool correct) {
+                char ch = bchar.first;
+                bool err = bchar.second;
+
                 if (err) {
                     nccon(theme.colorful_error_pair);
                     addch(ch);
                     nccoff(theme.colorful_error_pair);
-                } else if (i < p) {
+                } else if (correct) {
                     nccon(theme.main_pair);
                     addch(ch);
                     nccoff(theme.main_pair);
@@ -710,12 +711,18 @@ namespace modes {
                     addch(ch);
                     nccoff(theme.sub_pair);
                 }
-                i++;
-            }
+            };
 
+            
             if (str_rdb("fancy_cursor", "mode words")) {
                 std::int64_t cursor_wait = str_rdll("cursor_wait", "mode words");
                 if (p > 0 && forwards) {
+                    /* to erase artifacts from last dangling thin cursor */
+                    if (p > 1) {
+                        move(y, p - 2);
+                        outch(buf[p - 2], true);
+                    }
+
                     curs_set(0);
                     for (int i = 0; i < 8; i++) {
                         move(y, p - 1);
@@ -725,7 +732,7 @@ namespace modes {
                         std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
                     }
                     curs_set(1);
-                    for (int i = 0; i < 8; i++) {
+                    for (int i = 0; i < 7; i++) {
                         move(y, p - 1);
                         printw("%lc", get_unicode_cursor(i));
                         move(y, p - 1);
@@ -733,26 +740,42 @@ namespace modes {
                         std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
                     }
                 } else if (!forwards) {
+                    /* to erase artifacts from last dangling thin cursor */
+                    move(y, p + 1);
+                    outch(buf[p + 1], true);
+
                     curs_set(1);
                     for (int i = 7; i >= 0; i--) {
-                        move(y, p + 1);
+                        move(y, p);
                         printw("%lc", get_unicode_cursor(i));
-                        move(y, p + 1);
+                        move(y, p);
                         refresh();
                         std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
                     }
                     curs_set(0);
-                    for (int i = 7; i >= 0; i--) {
-                        move(y, p + 1);
+                    for (int i = 7; i >= 1; i--) {
+                        move(y, p);
                         printw("%lc", get_unicode_cursor(i));
-                        move(y, p + 1);
+                        move(y, p);
                         refresh();
                         std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
                     }
                 }
             }
 
-            move(y, p);
+
+            cleart(theme);
+            std::int_fast32_t i = 0;
+            for (auto [ch, err] : buf) {
+                outch({ch, err}, i < p);
+                i++;
+            }
+
+            move(y, p - 1);
+            printw("%lc", get_unicode_cursor(6));
+            move(y, p - 1);
+            curs_set(1);
+
             refresh();
         }
 
@@ -831,7 +854,7 @@ namespace modes {
 
 
 int main() {
-    setlocale(LC_ALL, "");
+    std::setlocale(LC_ALL, "");
 
     WINDOW* full_win = init_ncurses();
     start_color();
