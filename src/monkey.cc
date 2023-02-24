@@ -15,6 +15,7 @@
 #include <menu.h>
 
 #include <sys/stat.h>
+#include <locale.h>
 
 #include "/home/stole/rapidjson/include/rapidjson/document.h"
 #include "/home/stole/rapidjson/include/rapidjson/filereadstream.h"
@@ -32,7 +33,7 @@ bool has_color = false;
 const std::string CONFIG_FILENAME = "main.conf";
 
 
-/* but remember to move cursor to output if index !! */
+/* but remember to move cursor to output if animating 2nd half !! */
 wchar_t get_unicode_cursor(std::uint32_t index) {
     const static std::wstring cs = L"█▉▊▋▌▍▎▏"; /* 100 ms for one char ? 6.25 ms per cursor */
     return cs[7 - (index % 8)];
@@ -54,7 +55,7 @@ ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
 }
 
 std::unordered_map<std::string, std::string> config = {
-    {"theme", ""}, {"name", ""}, {"lang", ""}, {"hide_cursor", "false"}, {"fancy_cursor", "true"}
+    {"theme", ""}, {"name", ""}, {"lang", ""}, {"base_color_id", "200"}, {"cursor_wait", "6250"}, {"hide_cursor", "false"}, {"fancy_cursor", "true"}
 };
 
 bool str_startswith(const std::string& src, const std::string& match) {
@@ -129,6 +130,7 @@ void split(const std::string& s, const std::string& delim, std::vector<std::stri
 }
 
 void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const ssto::color::rgb& fg, const ssto::color::rgb& bg) {
+    /* TODO: maybe check if pair already in use through pair_content ? and adjust if necessary */
     static constexpr double m = 125.0 / 32.0; /* init_color accepts rgb from 0 to 1000 */
     init_color(cid2, static_cast<std::int16_t>(std::round(fg.r * m)), static_cast<std::int16_t>(std::round(fg.g * m)), static_cast<std::int16_t>(std::round(fg.b * m)));
     init_color(cid3, static_cast<std::int16_t>(std::round(bg.r * m)), static_cast<std::int16_t>(std::round(bg.g * m)), static_cast<std::int16_t>(std::round(bg.b * m)));
@@ -156,8 +158,9 @@ void nccoff(std::int16_t pairid) {
     }
 }
 
-/* origin, name are for error msgs, report where it was called from and what was read */
-bool configstr_rd(std::string confs, const std::string& origin, const std::string& name) {
+/* origin is for error msgs, report where it was called from and what was read */
+bool str_rdb(const std::string& name, const std::string& origin) {
+    std::string confs = config[name];
     std::transform(confs.begin(), confs.end(), confs.begin(), [](unsigned char c) { return std::tolower(c); });
 
     if (str_startswith(confs, "true") || str_startswith(confs, "y")) {
@@ -169,8 +172,23 @@ bool configstr_rd(std::string confs, const std::string& origin, const std::strin
     }
 
     deinit_ncurses();
-    std::cerr << "fatal: " << origin << ": conditional eval for \"" << confs << "\" reading " << name << " failed\n";
+    std::cerr << "fatal: " << origin << ": failed to convert option " << name << " value \"" << confs << "\" to bool\n";
     exit(1);
+}
+
+/* origin is for error msgs, report where it was called from and what was read */
+std::int64_t str_rdll(const std::string& name, const std::string& origin) {
+    std::string confs = config[name];
+    std::int64_t r = 0;
+    try {
+        r = std::stoll(confs);
+    } catch (std::exception& e) {
+        deinit_ncurses();
+        std::cerr << "fatal: " << origin << ": failed to convert option " << name << " value \"" << confs << "\" to long long\n";
+        exit(1);
+    }
+
+    return r;
 }
 
 /* will fetch from monkeytype if not exist locally */
@@ -180,6 +198,10 @@ void fetch_file(const std::string& filename, const std::string& origin) {
     if (file_exists(filename)) {
         return;
     }
+
+    printw("info: %s: fetching monkeytype.com/%s\n", origin.c_str(), filename.c_str());
+    getch();
+    refresh();
 
     httplib::SSLClient cli("monkeytype.com");
     cli.enable_server_certificate_verification(false);
@@ -366,8 +388,7 @@ void get_theme(const std::string& name, Theme& theme) {
     }
 
     /* just hope that the color ids don't conflict with terminal */
-    static constexpr std::uint32_t base = 100;
-    assign_theme(base, theme);
+    assign_theme(static_cast<std::int16_t>(str_rdll("base_color_id", "get_theme")), theme);
 }
 
 void cleart(const Theme& theme) {
@@ -610,7 +631,6 @@ namespace modes {
             out.append(words[i]).append(" ");
         }
         
-
         if (out.empty()) {
             mvaddstr(0, 0, "error: mode words: wordstring was empty");
             refresh();
@@ -628,8 +648,8 @@ namespace modes {
         for (char c : out) {
             buf.emplace_back(c, false);
         }
-        std::int32_t p = 0;
 
+        std::int32_t p = 0;
         std::uint64_t start = 0;
         bool started = false;
         bool broken = false;
@@ -638,6 +658,7 @@ namespace modes {
 
         while (p < buf.size()) {
             chtype chin = getch();
+
             if (chin == KEY_DL || chin == '\t') {
                 broken = true;
                 break;
@@ -647,22 +668,31 @@ namespace modes {
                 continue;
             }
 
-            if (chin != buf[p].first) {
-                buf.insert(p, std::make_pair(static_cast<char>(chin), true));
-                std::vector<std::pair<char, bool>> newbuf;
-                newbuf.assign(buf.begin(), buf.begin() + p);
-                newbuf.emplace_back(static_cast<char>(chin), true); /* true error */
-                newbuf.insert(newbuf.end(), buf.begin() + p, buf.end());
-                buf = newbuf;
+            int x = 0, y = 0;
+            getyx(pwin, y, x);
+            bool forwards = true;
+            if (chin == KEY_BACKSPACE) {
+                if (x <= 0) { continue; }
+                if (buf[p - 1].second) {
+                    buf.erase(buf.begin() + p - 1);
+                }
+                p--;
+                forwards = false;
             } else {
-                char_count++;
+                if (chin != buf[p].first) {
+                    buf.insert(buf.begin() + p, std::make_pair(static_cast<char>(chin), true));
+                } else {
+                    char_count++;
+                }
+
+                if (!started) {
+                    started = true;
+                    start = current_time();
+                }
+
+                p++;
             }
 
-            p++;
-            if (!started) {
-                started = true;
-                start = current_time();
-            }
 
             cleart(theme);
             std::int_fast32_t i = 0;
@@ -683,8 +713,45 @@ namespace modes {
                 i++;
             }
 
-            int x = 0, y = 0;
-            getyx(pwin, y, x);
+            if (str_rdb("fancy_cursor", "mode words")) {
+                std::int64_t cursor_wait = str_rdll("cursor_wait", "mode words");
+                if (p > 0 && forwards) {
+                    curs_set(0);
+                    for (int i = 0; i < 8; i++) {
+                        move(y, p - 1);
+                        printw("%lc", get_unicode_cursor(i));
+                        move(y, p - 1);
+                        refresh();
+                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                    }
+                    curs_set(1);
+                    for (int i = 0; i < 8; i++) {
+                        move(y, p - 1);
+                        printw("%lc", get_unicode_cursor(i));
+                        move(y, p - 1);
+                        refresh();
+                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                    }
+                } else if (!forwards) {
+                    curs_set(1);
+                    for (int i = 7; i >= 0; i--) {
+                        move(y, p + 1);
+                        printw("%lc", get_unicode_cursor(i));
+                        move(y, p + 1);
+                        refresh();
+                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                    }
+                    curs_set(0);
+                    for (int i = 7; i >= 0; i--) {
+                        move(y, p + 1);
+                        printw("%lc", get_unicode_cursor(i));
+                        move(y, p + 1);
+                        refresh();
+                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                    }
+                }
+            }
+
             move(y, p);
             refresh();
         }
@@ -749,7 +816,7 @@ namespace modes {
         addnewline(pwin);
         addstr("unfortunately, due to terminal resolution, ");
         addmonkeystr(theme);
-        addstr(" is unable to use a smoothed cursor when typing.");
+        addstr(" is unable to replicate the same exact experience when typing.");
         addnewline(pwin);
         addnewline(pwin);
         addstr("press any key to continue... ");
@@ -764,8 +831,9 @@ namespace modes {
 
 
 int main() {
-    WINDOW* full_win = init_ncurses();
+    setlocale(LC_ALL, "");
 
+    WINDOW* full_win = init_ncurses();
     start_color();
 
     std::ifstream config_file(CONFIG_FILENAME);
@@ -808,8 +876,8 @@ int main() {
         }
     }
 
-    bool hc = configstr_rd(config["hide_cursor"], "main", "hide_cursor");
-    bool fc = configstr_rd(config["fancy_cursor"], "main", "fancy_cursor");
+    bool hc = str_rdb("hide_cursor", "main");
+    bool fc = str_rdb("fancy_cursor", "main");
 
     Theme theme{};
     get_theme(config["theme"], theme);
