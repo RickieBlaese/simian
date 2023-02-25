@@ -923,7 +923,7 @@ namespace modes {
 } /* namespace modes */
 
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     /* TODO: maybe option to output template .conf? or theme list or similar */
     /* if (argc > 1) { */
 
