@@ -1,0 +1,3 @@
+[submodule "libs/color"]
+	path = libs/color
+	url = https://github.com/RickieBlaese/color
