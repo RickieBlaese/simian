@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <iostream>
 #include <sstream>
 #include <random>
@@ -17,15 +18,15 @@
 #include <sys/stat.h>
 #include <clocale>
 
-#include "/home/stole/rapidjson/include/rapidjson/document.h"
-#include "/home/stole/rapidjson/include/rapidjson/filereadstream.h"
+#include <rapidjson/document.h>
+#include <rapidjson/filereadstream.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
-#include "/home/stole/cpp-httplib/httplib.h"
+#include <cpp-httplib/httplib.h>
 
-#include "/home/stole/fmt/include/fmt/core.h"
+#include <color/color.h>
 
-#include "/home/stole/color/color.h"
+#include <rapidfuzz/fuzz.hpp>
 
 
 bool has_color = false;
@@ -34,19 +35,19 @@ const std::string CONFIG_FILENAME = "main.conf";
 
 
 /* but remember to move cursor to output if animating 2nd half !! */
-wchar_t get_unicode_cursor(std::uint32_t index) {
+wchar_t get_unicode_caret(std::uint32_t index) {
     const static std::wstring cs = L"▏▎▍▌▋▊▉█▕"; /* 100 ms for one char ? 6.25 ms per cursor */
     return cs[index];
 }
 
 
 struct Theme {
-    /* main is used for correct letters, caret is for caret color, text is used for slightly standout text, sub is used for other text color, bg is background color, and colorful_error is generally error color */
+    /* main is used for correct letters, caret is for caret color, text is used for slightly standout text, sub is used for other text color, bg is background color, colorful_error is general error color, and colorful_error_extra is used for incorrect letters typed outside of a word */
     ssto::color::rgb main, caret, sub, sub_alt, bg,
         text, error, error_extra, colorful_error, colorful_error_extra; /* colorful = colorful */
 
     /* color pairs */
-    std::int16_t main_pair, caret_pair, sub_pair, sub_alt_pair, bg_pair,
+    std::int16_t main_pair, caret_pair, caret_inverse_pair, sub_pair, sub_alt_pair, bg_pair,
         text_pair, error_pair, error_extra_pair, colorful_error_pair, colorful_error_extra_pair;
 };
 
@@ -54,9 +55,41 @@ ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
     return ssto::color::rgb{static_cast<std::uint16_t>(std::round(((hexv >> 16) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round(((hexv >> 8) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round((hexv & 0xFF) / 255.0))};
 }
 
+
+/* ----- */
 std::unordered_map<std::string, std::string> config = {
-    {"theme", ""}, {"name", ""}, {"lang", ""}, {"base_color_id", "200"}, {"cursor_wait", "6250"}, {"hide_cursor", "false"}, {"fancy_cursor", "true"}
+    {"theme", ""}, {"name", ""}, {"language", ""},
+    {"base_color_id", "200"},
+    {"caret_wait", "6250"}, {"hide_caret", "false"}, {"smooth_caret", "true"},
+    {"show_decimal_places", "false"}
 };
+/* ----- */
+
+/* copied from rapidfuzz github */
+template <typename Sentence1, typename Iterable, typename Sentence2 = typename Iterable::value_type>
+std::optional<std::pair<Sentence2, double>> extractOne(const Sentence1& query, const Iterable& choices, const double score_cutoff = 0.0) {
+    bool match_found = false;
+    double best_score = score_cutoff;
+    Sentence2 best_match;
+
+    rapidfuzz::fuzz::CachedPartialRatio<typename Sentence1::value_type> scorer(query);
+
+    for (const auto& choice : choices) {
+        double score = scorer.similarity(choice, best_score);
+
+        if (score >= best_score) {
+            match_found = true;
+            best_score = score;
+            best_match = choice;
+        }
+    }
+
+    if (!match_found) {
+          return std::nullopt;
+    }
+
+    return std::make_pair(best_match, best_score);
+}
 
 bool str_startswith(const std::string& src, const std::string& match) {
     return src.length() >= match.length() ? src.substr(0, match.length()) == match : false;
@@ -251,7 +284,7 @@ void get_quotes(std::vector<std::string>& outs, Quote size) {
     /*     } */
     /* ] */
 
-    const std::string quotes_filename = fmt::format("quotes/{}.json", config["lang"]);
+    const std::string quotes_filename = "quotes/" + config["language"] + ".json";
     fetch_file(quotes_filename, "get_quotes");
     std::FILE *pfile = std::fopen(quotes_filename.c_str(), "r");
     rapidjson::Document doc;
@@ -272,7 +305,7 @@ void get_quotes(std::vector<std::string>& outs, Quote size) {
 }
 
 void get_words(std::vector<std::string>& outs) {
-    const std::string words_filename = fmt::format("languages/{}.json", config["lang"]);
+    const std::string words_filename = "languages/" + config["language"] + ".json";
     fetch_file(words_filename, "get_words");
     std::FILE *pfile = std::fopen(words_filename.c_str(), "r");
     rapidjson::Document doc;
@@ -299,7 +332,7 @@ void get_themes_list(std::vector<std::string>& outs) {
     /*     } */
     /* ] */
     
-    const std::string list_filename = fmt::format("themes/_list.json");
+    const std::string list_filename = "themes/_list.json";
     fetch_file(list_filename, "get_themes_list");
     std::FILE *pfile = std::fopen(list_filename.c_str(), "r");
     rapidjson::Document doc;
@@ -314,7 +347,7 @@ void get_themes_list(std::vector<std::string>& outs) {
     delete[] contents;
 }
 
-/* will assign color ids up to base + 29, color pairs up to base + 27 */
+/* will assign color ids up to base + 30, color pairs up to base + 32 */
 void assign_theme(const std::int16_t& base, Theme& theme) {
     /* NOLINTBEGIN */
     pair_init(base, base + 1, base + 2, theme.main, theme.bg);
@@ -338,12 +371,15 @@ void assign_theme(const std::int16_t& base, Theme& theme) {
 
     pair_init(base + 27, base + 28, base + 29, theme.bg, theme.bg);
     theme.bg_pair = base + 27;
+
+    pair_init(base + 30, base + 31, base + 32, theme.bg, theme.caret);
+    theme.caret_inverse_pair = base + 30;
     /* NOLINTEND */
 }
 
 
 void get_theme(const std::string& name, Theme& theme) {
-    const std::string theme_filename = fmt::format("themes/{}.css", name);
+    const std::string theme_filename = "themes/" + name + ".css";
     std::string text;
 
     if (name == "custom") { /* we do not want to fetch */
@@ -440,24 +476,48 @@ std::ifstream::pos_type filesize(const char *filename) {
     return r; 
 }
 
+long double rounddouble(const long double& num, std::int32_t places) {
+    const long double coeff = std::pow(10, places);
+    return std::round(num * coeff) / coeff;
+}
+
+inline std::int64_t roundlong(const long double& num) {
+    return static_cast<std::int64_t>(std::round(num));
+}
 
 
 State ask_again(WINDOW *pwin, bool broken, const long double& wpm, const Theme& theme) {
     if (!broken) {
         nccon(theme.sub_pair);
         addnewline(pwin);
-        wprintw(pwin, "wpm: %Lf", wpm);
+        waddstr(pwin, "wpm: ");
+        nccon(theme.main_pair);
+        if (str_rdb("show_decimal_places", "ask_again")) {
+            wprintw(pwin, "%.2Lf", rounddouble(wpm, 2));
+        } else {
+            wprintw(pwin, "%li", roundlong(wpm));
+        }
+        nccoff(theme.main_pair);
         addnewline(pwin);
         addstr("again [");
+        nccon(theme.main_pair);
         attron(A_UNDERLINE);
         addch('y');
         attroff(A_UNDERLINE);
-        addstr("es, ");
+        addstr("es");
+        nccoff(theme.main_pair);
+        addstr(", ");
+        nccon(theme.main_pair);
         attron(A_UNDERLINE);
         addch('n');
         attroff(A_UNDERLINE);
-        addstr("o]? ");
+        addstr("o");
+        nccoff(theme.main_pair);
+        addstr("]? ");
+        nccoff(theme.sub_pair);
         chtype chin = 'q';
+
+        curs_set(2);
         bool cont = false;
         while (true) {
             refresh();
@@ -655,6 +715,7 @@ namespace modes {
         bool broken = false;
         std::int_fast32_t char_count = 0;
 
+        curs_set(0);
 
         /* putting off total rewrite with nonblocking getch */
         while (p < buf.size()) {
@@ -715,8 +776,8 @@ namespace modes {
             };
 
             
-            if (str_rdb("fancy_cursor", "mode words")) {
-                std::int64_t cursor_wait = str_rdll("cursor_wait", "mode words");
+            if (str_rdb("smooth_caret", "mode words")) {
+                std::int64_t caret_wait = str_rdll("caret_wait", "mode words");
                 if (p > 0 && forwards) {
                     /* to erase artifacts from last dangling thin cursor */
                     if (p > 1) {
@@ -724,43 +785,49 @@ namespace modes {
                         outch(buf[p - 2], true);
                     }
 
-                    curs_set(0);
+                    nccon(theme.caret_pair);
                     for (int i = 0; i < 8; i++) {
                         move(y, p - 1);
-                        printw("%lc", get_unicode_cursor(i));
+                        printw("%lc", get_unicode_caret(i));
                         move(y, p - 1);
                         refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
                     }
-                    curs_set(1);
+                    nccoff(theme.caret_pair);
+
+                    nccon(theme.caret_inverse_pair);
                     for (int i = 0; i < 7; i++) {
                         move(y, p - 1);
-                        printw("%lc", get_unicode_cursor(i));
+                        printw("%lc", get_unicode_caret(i));
                         move(y, p - 1);
                         refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
                     }
+                    nccoff(theme.caret_inverse_pair);
                 } else if (!forwards) {
                     /* to erase artifacts from last dangling thin cursor */
                     move(y, p + 1);
                     outch(buf[p + 1], true);
 
-                    curs_set(1);
+                    nccon(theme.caret_inverse_pair);
                     for (int i = 7; i >= 0; i--) {
                         move(y, p);
-                        printw("%lc", get_unicode_cursor(i));
+                        printw("%lc", get_unicode_caret(i));
                         move(y, p);
                         refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
                     }
-                    curs_set(0);
+                    nccoff(theme.caret_inverse_pair);
+
+                    nccon(theme.caret_pair);
                     for (int i = 7; i >= 1; i--) {
                         move(y, p);
-                        printw("%lc", get_unicode_cursor(i));
+                        printw("%lc", get_unicode_caret(i));
                         move(y, p);
                         refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(cursor_wait));
+                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
                     }
+                    nccoff(theme.caret_pair);
                 }
             }
 
@@ -772,10 +839,11 @@ namespace modes {
                 i++;
             }
 
+            nccon(theme.caret_pair);
             move(y, p - 1);
-            printw("%lc", get_unicode_cursor(8));
+            printw("%lc", get_unicode_caret(8));
             move(y, p - 1);
-            curs_set(0);
+            nccoff(theme.caret_pair);
 
             refresh();
         }
@@ -798,6 +866,7 @@ namespace modes {
         chtype chin = '\0';
         bool started = false;
 
+        curs_set(1);
         while (chin != '\t') {
             chin = getch();
             if (!started) {
@@ -854,7 +923,11 @@ namespace modes {
 } /* namespace modes */
 
 
-int main() {
+int main(int argc, char** argv) {
+    /* TODO: maybe option to output template .conf? or theme list or similar */
+    /* if (argc > 1) { */
+
+    
     std::setlocale(LC_ALL, "");
 
     WINDOW* full_win = init_ncurses();
@@ -867,6 +940,12 @@ int main() {
         return 1;
     }
 
+    std::vector<std::string> configkeys;
+    configkeys.reserve(config.size());
+    for (auto [key, value] : config) {
+        configkeys.push_back(key);
+    }
+
     std::uint32_t ocount = 0;
     while (config_file) {
         ocount++;
@@ -877,31 +956,41 @@ int main() {
         opts.reserve(2);
         split(line, "=", opts);
         if (opts.size() < 2) {
-            wprintw(full_win, "warning: %s config option %i had %lu tokens ... skipping\n", CONFIG_FILENAME.c_str(), ocount, opts.size());
-            getch();
+            wprintw(full_win, "warning: %s file %ith config option had %lu tokens ... skipping\n", CONFIG_FILENAME.c_str(), ocount, opts.size());
             continue;
         }
         if (opts.size() > 2) {
-            wprintw(full_win, "warning: %s config option %i had %lu tokens ... using first two\n", CONFIG_FILENAME.c_str(), ocount, opts.size());
-            getch();
+            wprintw(full_win, "warning: %s file %ith config option had %lu tokens ... using first two\n", CONFIG_FILENAME.c_str(), ocount, opts.size());
         }
         std::string name = opts[0], value = opts[1];
         /* wprintw(full_win, "name: %s, value: %s\n", name.c_str(), value.c_str()); */
         std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
 
+        if (!config.contains(name)) {
+            std::optional<std::pair<std::string, double>> res = extractOne(name, configkeys);
+            if (!res.has_value()) {
+                wprintw(full_win, "warning: %s file %ith config option \"%s\" not found\n", CONFIG_FILENAME.c_str(), ocount, name.c_str());
+                continue;
+            }
+            wprintw(full_win, "warning: %s file %ith config option \"%s\" not found, did you mean \"%s\"?\n", CONFIG_FILENAME.c_str(), ocount, name.c_str(), res.value().first.c_str());
+            continue;
+        }
+
         config[name] = value;
     }
 
-    for (const std::string& option_name : {"theme", "lang"}) {
-        if (config[option_name].empty()) {
+    for (auto [name, value] : config) {
+        if (value.empty()) {
             deinit_ncurses();
-            std::cerr << "fatal: main: " << CONFIG_FILENAME << " config " << option_name << " not set (\"" << option_name << "=...\")\n";
+            std::cerr << "fatal: main: " << CONFIG_FILENAME << " config " << name << " not set (\"" << name << "=...\")\n";
             return 1;
         }
     }
+    refresh();
+    getch();
 
-    bool hc = str_rdb("hide_cursor", "main");
-    bool fc = str_rdb("fancy_cursor", "main");
+    bool hc = str_rdb("hide_caret", "main");
+    bool fc = str_rdb("smooth_caret", "main");
 
     Theme theme{};
     get_theme(config["theme"], theme);
@@ -955,5 +1044,4 @@ int main() {
     deinit_ncurses();
 
     return 0;
-
 }
