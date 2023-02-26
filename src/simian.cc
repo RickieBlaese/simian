@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <clocale>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -13,19 +14,17 @@
 #include <vector>
 
 #include <ncurses.h>
-#include <unistd.h>
-
 #include <sys/stat.h>
-#include <clocale>
+#include <unistd.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/filereadstream.h>
 
+#include <rapidfuzz/fuzz.hpp>
+
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <cpp-httplib/httplib.h>
 
-
-#include <rapidfuzz/fuzz.hpp>
 
 bool has_color = false;
 

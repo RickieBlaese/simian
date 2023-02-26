@@ -4,14 +4,16 @@ project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
 
 
-include(FetchContent)
-FetchContent_Declare(
-  rapidfuzz
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/3rdparty/RapidFuzz
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/rapidfuzz
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR> "${CMAKE_OPT_ARGS}"
-)
-FetchContent_MakeAvailable(rapidfuzz)
+# include(FetchContent)
+# FetchContent_Declare(
+#   rapidfuzz
+#   SOURCE_DIR ${CMAKE_SOURCE_DIR}/3rdparty/RapidFuzz
+#   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/rapidfuzz
+#   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR> "${CMAKE_OPT_ARGS}"
+# )
+# FetchContent_MakeAvailable(rapidfuzz)
+
+add_subdirectory(3rdparty/RapidFuzz)
 
 # Create an executable
 add_executable(${PROJECT_NAME}
