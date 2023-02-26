@@ -24,7 +24,6 @@
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <cpp-httplib/httplib.h>
 
-#include <color/color.h>
 
 #include <rapidfuzz/fuzz.hpp>
 
@@ -53,10 +52,13 @@ T coeff_variation(const std::vector<T>& samples) {
     return std::sqrt(std::accumulate(samples.begin(), samples.end(), 0.0, variance_func)) / mean;
 }
 
+struct RGB {
+    std::uint16_t r, g, b;
+};
 
 struct Theme {
     /* main is used for correct letters, caret is for caret color, text is used for slightly standout text, sub is used for other text color, bg is background color, colorful_error is general error color, and colorful_error_extra is used for incorrect letters typed outside of a word */
-    ssto::color::rgb main, caret, sub, sub_alt, bg,
+    RGB main, caret, sub, sub_alt, bg,
         text, error, error_extra, colorful_error, colorful_error_extra; /* colorful = colorful */
 
     /* color pairs */
@@ -64,8 +66,8 @@ struct Theme {
         text_pair, error_pair, error_extra_pair, colorful_error_pair, colorful_error_extra_pair;
 };
 
-ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
-    return ssto::color::rgb{static_cast<std::uint16_t>(std::round(((hexv >> 16) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round(((hexv >> 8) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round((hexv & 0xFF) / 255.0))};
+RGB hex_to_rgb(std::uint32_t hexv) {
+    return RGB{static_cast<std::uint16_t>(std::round(((hexv >> 16) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round(((hexv >> 8) & 0xFF) / 255.0)), static_cast<std::uint16_t>(std::round((hexv & 0xFF) / 255.0))};
 }
 
 
@@ -110,9 +112,9 @@ bool str_startswith(const std::string& src, const std::string& match) {
 
 
 
-ssto::color::rgb strhex_to_rgb(const std::string& hexv) {
+RGB strhex_to_rgb(const std::string& hexv) {
     std::uint16_t r = 0, g = 0, b = 0;
-    ssto::color::rgb ret{};
+    RGB ret{};
     std::uint8_t res = 0;
 
     /* no idea why but r, g, b are all one lower than they should be here after reading */
@@ -187,7 +189,7 @@ void split(const std::string& s, const std::string& delim, std::vector<std::stri
     if (last != s.size()) { outs.push_back(s.substr(last, s.size())); }
 }
 
-void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const ssto::color::rgb& fg, const ssto::color::rgb& bg) {
+void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const RGB& fg, const RGB& bg) {
     /* TODO: maybe check if pair already in use through pair_content ? and adjust if necessary */
     static constexpr double m = 125.0 / 32.0; /* init_color accepts rgb from 0 to 1000 */
     init_color(cid2, static_cast<std::int16_t>(std::round(fg.r * m)), static_cast<std::int16_t>(std::round(fg.g * m)), static_cast<std::int16_t>(std::round(fg.b * m)));
@@ -427,7 +429,7 @@ void get_theme(const std::string& name, Theme& theme) {
     for (const std::string& f : fcolors) {
         std::size_t beginh = f.find('#') + 1, beginn = f.find("--") + 2;
         std::string cname = f.substr(beginn, f.find(':') - 6 - beginn); /* 6 is width of "-color" suffix */
-        ssto::color::rgb color = strhex_to_rgb(f.substr(beginh));
+        RGB color = strhex_to_rgb(f.substr(beginh));
 
 
         if (cname == "bg") { theme.bg = color; }

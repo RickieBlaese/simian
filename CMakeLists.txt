@@ -3,16 +3,23 @@ cmake_minimum_required(VERSION 3.25)
 project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
 
-add_subdirectory(libs/rapidjson)
-add_subdirectory(3rdparty/RapidFuzz)
- 
+
+include(FetchContent)
+FetchContent_Declare(
+  rapidfuzz
+  SOURCE_DIR ${CMAKE_SOURCE_DIR}/3rdparty/RapidFuzz
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/rapidfuzz
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR> "${CMAKE_OPT_ARGS}"
+)
+FetchContent_MakeAvailable(rapidfuzz)
+
 # Create an executable
 add_executable(${PROJECT_NAME}
     src/simian.cc
 )
  
 # Linking libraries
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME} PRIVATE
     ncursesw
     tinfo
     ssl
