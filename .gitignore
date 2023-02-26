@@ -1,7 +1,5 @@
 monkey
-languages/*
-themes/*
-quotes/*
+bin/*
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
