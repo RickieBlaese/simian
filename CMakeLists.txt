@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(monkey VERSION 0.3 DESCRIPTION "monkeytype in terminal")
+project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
 find_package(rapidfuzz REQUIRED)
 
@@ -9,8 +9,7 @@ add_subdirectory(libs/rapidjson)
  
 # Create an executable
 add_executable(${PROJECT_NAME}
-    src/monkey.cc
-    # your other files...
+    src/simian.cc
 )
  
 # Linking libraries
@@ -23,13 +22,13 @@ target_link_libraries(${PROJECT_NAME}
     rapidfuzz::rapidfuzz
 )
 
+# These are output from ncursesw5-config --cflags --libs
 add_compile_definitions(DEFAULT_SOURCE XOPEN_SOURCE=600)
  
 # Specify includes
 target_include_directories(${PROJECT_NAME} PRIVATE
     libs/rapidjson/include
     libs
-    # Remember to add the include directories of any other libraries too
 )
 
 
