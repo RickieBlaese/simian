@@ -4,3 +4,9 @@
 [submodule "libs/rapidfuzz-cpp"]
 	path = libs/rapidfuzz-cpp
 	url = https://github.com/maxbachmann/rapidfuzz-cpp
+[submodule "libs/3rdparty/RapidFuzz"]
+	path = libs/3rdparty/RapidFuzz
+	url = https://github.com/maxbachmann/rapidfuzz-cpp.git
+[submodule "3rdparty/RapidFuzz"]
+	path = 3rdparty/RapidFuzz
+	url = https://github.com/maxbachmann/rapidfuzz-cpp.git

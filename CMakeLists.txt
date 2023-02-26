@@ -2,10 +2,9 @@ cmake_minimum_required(VERSION 3.25)
 
 project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
-find_package(rapidfuzz REQUIRED)
-
 
 add_subdirectory(libs/rapidjson)
+add_subdirectory(3rdparty/RapidFuzz)
  
 # Create an executable
 add_executable(${PROJECT_NAME}
@@ -14,7 +13,6 @@ add_executable(${PROJECT_NAME}
  
 # Linking libraries
 target_link_libraries(${PROJECT_NAME}
-    menu
     ncursesw
     tinfo
     ssl

@@ -13,7 +13,6 @@
 #include <vector>
 
 #include <ncurses.h>
-#include <menu.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
