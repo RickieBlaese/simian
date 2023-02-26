@@ -1,3 +1,6 @@
 [submodule "libs/color"]
 	path = libs/color
 	url = https://github.com/RickieBlaese/color
+[submodule "libs/rapidfuzz-cpp"]
+	path = libs/rapidfuzz-cpp
+	url = https://github.com/maxbachmann/rapidfuzz-cpp
