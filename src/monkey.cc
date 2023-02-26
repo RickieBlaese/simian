@@ -14,6 +14,7 @@
 
 #include <ncurses.h>
 #include <menu.h>
+#include <unistd.h>
 
 #include <sys/stat.h>
 #include <clocale>
@@ -28,16 +29,29 @@
 
 #include <rapidfuzz/fuzz.hpp>
 
-
 bool has_color = false;
 
 const std::string CONFIG_FILENAME = "main.conf";
 
-
-/* but remember to move cursor to output if animating 2nd half !! */
+/* https://vi.stackexchange.com/questions/25151/how-to-change-vim-cursor-shape-in-text-console */
+/* but remember to invert output if animating 2nd half !! */
 wchar_t get_unicode_caret(std::uint32_t index) {
     const static std::wstring cs = L"▏▎▍▌▋▊▉█▕"; /* 100 ms for one char ? 6.25 ms per cursor */
     return cs[index];
+}
+
+template <typename T>
+T coeff_variation(const std::vector<T>& samples) {
+    
+    const std::size_t sz = samples.size();
+    if (sz <= 1) { return 0.0; }
+    const T mean = std::accumulate(samples.begin(), samples.end(), 0.0) / sz;
+
+    auto variance_func = [&mean, &sz](T accumulator, const T& val) {
+        return accumulator + ((val - mean) * (val - mean) / (sz - 1));
+    };
+
+    return std::sqrt(std::accumulate(samples.begin(), samples.end(), 0.0, variance_func)) / mean;
 }
 
 
@@ -60,7 +74,7 @@ ssto::color::rgb hex_to_rgb(std::uint32_t hexv) {
 std::unordered_map<std::string, std::string> config = {
     {"theme", ""}, {"name", ""}, {"language", ""},
     {"base_color_id", "200"},
-    {"caret_wait", "6250"}, {"hide_caret", "false"}, {"smooth_caret", "true"},
+    {"caret_wait", "6250"}, {"hide_caret", "false"}, {"smooth_caret", "true"}, {"xterm_support", "true"},
     {"show_decimal_places", "false"}
 };
 /* ----- */
@@ -127,6 +141,18 @@ enum Quote : unsigned int {
     szshort, szmedium, szlong, szthicc
 };
 
+/* order is crucial : do not change */
+enum CursorType : unsigned int {
+    blinking_block, blinking_block_default, steady_block,
+    blinking_underline, steady_underline, blinking_bar_xterm, steady_bar_xterm
+};
+
+void set_cursor_type(const CursorType& ct) {
+    const std::string out = "\33[" + std::to_string(ct) + " q";
+    /* using write directly here just in case, we want to get around ncurses all the way */
+    write(1, out.c_str(), out.length());
+}
+
 bool file_exists(const std::string& filename) {
     struct stat buffer{};
     return !stat(filename.c_str(), &buffer);
@@ -170,7 +196,7 @@ void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const 
     init_pair(pairid, cid2, cid3); 
 }
 
-std::vector<std::int16_t> ncc_past_colors; /* TODO: */
+std::vector<std::int16_t> ncc_past_colors;
 
 void nccon(std::int16_t pairid) {
     if (!ncc_past_colors.empty()) {
@@ -531,6 +557,7 @@ State ask_again(WINDOW *pwin, bool broken, const long double& wpm, const Theme& 
                 break;
             }
         }
+        curs_set(1);
         if (!cont) { return State::switch_mode; }
     }
     return State::cont;
@@ -776,10 +803,12 @@ namespace modes {
             };
 
             
+            /* both second halves of animation ignore last caret to decrease visual blinking of letters */
+            curs_set(0);
             if (str_rdb("smooth_caret", "mode words")) {
                 std::int64_t caret_wait = str_rdll("caret_wait", "mode words");
                 if (p > 0 && forwards) {
-                    /* to erase artifacts from last dangling thin cursor */
+                    /* to erase artifacts from last dangling thin caret */
                     if (p > 1) {
                         move(y, p - 2);
                         outch(buf[p - 2], true);
@@ -804,8 +833,9 @@ namespace modes {
                         std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
                     }
                     nccoff(theme.caret_inverse_pair);
+
                 } else if (!forwards) {
-                    /* to erase artifacts from last dangling thin cursor */
+                    /* to erase artifacts from last dangling thin caret */
                     move(y, p + 1);
                     outch(buf[p + 1], true);
 
@@ -839,17 +869,18 @@ namespace modes {
                 i++;
             }
 
-            nccon(theme.caret_pair);
-            move(y, p - 1);
-            printw("%lc", get_unicode_caret(8));
-            move(y, p - 1);
-            nccoff(theme.caret_pair);
+            curs_set(1);
+            set_cursor_type(CursorType::steady_bar_xterm);
+            move(y, p);
 
             refresh();
         }
 
+        set_cursor_type(CursorType::steady_block);
+
         nccoff(theme.sub_pair);
 
+        /* this is actually incorrect way to calculate it, https://monkeytype.com/about */
         const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
 
         return ask_again(pwin, broken, wpm, theme);
