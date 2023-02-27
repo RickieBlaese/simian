@@ -3,6 +3,7 @@ bin/*
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
+CMakeDoxy*
 CMakeScripts
 Testing
 Makefile
