@@ -8,9 +8,9 @@ include(FetchContent)
 FetchContent_Declare(rapidfuzz
   GIT_REPOSITORY https://github.com/maxbachmann/rapidfuzz-cpp.git
   GIT_TAG main
-
 )
 FetchContent_MakeAvailable(rapidfuzz)
+
 
 # Create an executable
 add_executable(${PROJECT_NAME}
