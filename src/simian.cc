@@ -1041,8 +1041,8 @@ int main(int argc, char **argv) {
     refresh();
     if (needs_confirmation) { getch(); }
 
-    bool hc = str_rdb("hide_caret", "main");
-    bool fc = str_rdb("smooth_caret", "main");
+    /* bool hc = str_rdb("hide_caret", "main"); */
+    /* bool fc = str_rdb("smooth_caret", "main"); */
 
     Theme theme{};
     get_theme(config["theme"], theme);

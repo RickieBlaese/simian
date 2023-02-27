@@ -30,7 +30,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 add_compile_definitions(DEFAULT_SOURCE XOPEN_SOURCE=600)
  
 # Specify includes
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories(${PROJECT_NAME} PUBLIC
     libs/rapidjson/include
     libs
 )
