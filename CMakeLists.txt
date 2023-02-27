@@ -9,7 +9,6 @@ include(FetchContent)
 include(ExternalProject)
 
 FetchContent_Declare(rapidfuzz
-    SOURCE_DIR libs/rapidfuzz
     GIT_REPOSITORY https://github.com/maxbachmann/rapidfuzz-cpp.git
     GIT_TAG main
 )

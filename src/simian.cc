@@ -854,7 +854,7 @@ namespace modes {
             /* both second halves of animation ignore last caret to decrease visual blinking of letters */
             curs_set(0);
 
-            const std::int32_t ep = static_cast<std::int32_t>(forwards) * 2 - 1 + p; /* either + 1 or - 1 */
+            const std::int32_t ep = -static_cast<std::int32_t>(forwards) * 2 + 1 + p; /* either + 1 or - 1 */
 
             /* to erase artifacts from last dangling thin caret */
             move(y, ep);
