@@ -9,7 +9,7 @@ project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 #   GIT_TAG main)
 # FetchContent_MakeAvailable(rapidfuzz)
 
-add_subdirectory(3rdparty/RapidFuzz)
+add_subdirectory(libs/rapidfuzz-cpp)
 
 # Create an executable
 add_executable(${PROJECT_NAME}
