@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(FetchContent)
 include(ExternalProject)
@@ -13,6 +14,16 @@ FetchContent_Declare(rapidfuzz
     GIT_TAG main
 )
 FetchContent_MakeAvailable(rapidfuzz)
+
+ExternalProject_Add(rapidfuzz-cpp
+    PREFIX libs
+    GIT_REPOSITORY https://github.com/maxbachmann/rapidfuzz-cpp.git
+    GIT_TAG main
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+    TEST_COMMAND ""
+)
 
 ExternalProject_Add(cpp-httplib
     PREFIX libs
@@ -41,9 +52,7 @@ add_executable(${PROJECT_NAME}
  
 # Specify includes
 target_include_directories(${PROJECT_NAME} PRIVATE
-    libs
-    libs/src
-    _deps
+    .
 )
  
 # Linking libraries
@@ -63,4 +72,3 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

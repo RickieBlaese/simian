@@ -17,13 +17,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <rapidjson/include/rapidjson/document.h>
-#include <rapidjson/include/rapidjson/filereadstream.h>
-
-#include <rapidfuzz/fuzz.hpp>
+#include <libs/src/rapidjson/include/rapidjson/document.h>
+#include <libs/src/rapidjson/include/rapidjson/filereadstream.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
-#include <cpp-httplib/httplib.h>
+#include <libs/src/cpp-httplib/httplib.h>
+
+#include <libs/src/rapidfuzz-cpp/rapidfuzz/fuzz.hpp>
+
 
 
 bool has_color = false;
@@ -250,6 +251,55 @@ std::int64_t str_rdll(const std::string& name, const std::string& origin) {
     return r;
 }
 
+void animate_caret(std::int32_t y, std::int32_t p, bool forwards, const Theme& theme, const std::string& origin) {
+    if (str_rdb("smooth_caret", origin)) {
+        const std::int64_t caret_wait = str_rdll("caret_wait", origin);
+        if (p > 0 && forwards) {
+            nccon(theme.caret_pair);
+            for (int i = 0; i < 8; i++) {
+                move(y, p - 1);
+                printw("%lc", get_unicode_caret(i));
+                move(y, p - 1);
+                refresh();
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+            }
+            nccoff(theme.caret_pair);
+
+            nccon(theme.caret_inverse_pair);
+            for (int i = 0; i < 7; i++) {
+                move(y, p - 1);
+                printw("%lc", get_unicode_caret(i));
+                move(y, p - 1);
+                refresh();
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+            }
+            nccoff(theme.caret_inverse_pair);
+
+        } else if (!forwards) {
+            nccon(theme.caret_inverse_pair);
+            for (int i = 7; i >= 0; i--) {
+                move(y, p);
+                printw("%lc", get_unicode_caret(i));
+                move(y, p);
+                refresh();
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+            }
+            nccoff(theme.caret_inverse_pair);
+
+            nccon(theme.caret_pair);
+            for (int i = 7; i >= 1; i--) {
+                move(y, p);
+                printw("%lc", get_unicode_caret(i));
+                move(y, p);
+                refresh();
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+            }
+            nccoff(theme.caret_pair);
+        }
+    }
+}
+
+
 /* will fetch from monkeytype if not exist locally */
 /* filename should not have beginning */
 /* origin is where it is called from for errors */
@@ -324,7 +374,7 @@ void get_quotes(std::vector<std::string>& outs, Quote size) {
     std::int32_t group_begin = doc["groups"][size][0].GetInt(), group_end = doc["groups"][size][1].GetInt();
     for (const auto& quote : doc["quotes"].GetArray()) {
         const rapidjson::SizeType len = quote["text"].GetStringLength();
-        if (len >= group_begin || len < group_end) {
+        if (len >= group_begin && len < group_end) {
             outs.emplace_back(quote["text"].GetString());
         }
     }
@@ -803,62 +853,14 @@ namespace modes {
             
             /* both second halves of animation ignore last caret to decrease visual blinking of letters */
             curs_set(0);
-            if (str_rdb("smooth_caret", "mode words")) {
-                std::int64_t caret_wait = str_rdll("caret_wait", "mode words");
-                if (p > 0 && forwards) {
-                    /* to erase artifacts from last dangling thin caret */
-                    if (p > 1) {
-                        move(y, p - 2);
-                        outch(buf[p - 2], true);
-                    }
 
-                    nccon(theme.caret_pair);
-                    for (int i = 0; i < 8; i++) {
-                        move(y, p - 1);
-                        printw("%lc", get_unicode_caret(i));
-                        move(y, p - 1);
-                        refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
-                    }
-                    nccoff(theme.caret_pair);
+            const std::int32_t ep = static_cast<std::int32_t>(forwards) * 2 - 1 + p; /* either + 1 or - 1 */
 
-                    nccon(theme.caret_inverse_pair);
-                    for (int i = 0; i < 7; i++) {
-                        move(y, p - 1);
-                        printw("%lc", get_unicode_caret(i));
-                        move(y, p - 1);
-                        refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
-                    }
-                    nccoff(theme.caret_inverse_pair);
+            /* to erase artifacts from last dangling thin caret */
+            move(y, ep);
+            outch(buf[ep], true);
 
-                } else if (!forwards) {
-                    /* to erase artifacts from last dangling thin caret */
-                    move(y, p + 1);
-                    outch(buf[p + 1], true);
-
-                    nccon(theme.caret_inverse_pair);
-                    for (int i = 7; i >= 0; i--) {
-                        move(y, p);
-                        printw("%lc", get_unicode_caret(i));
-                        move(y, p);
-                        refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
-                    }
-                    nccoff(theme.caret_inverse_pair);
-
-                    nccon(theme.caret_pair);
-                    for (int i = 7; i >= 1; i--) {
-                        move(y, p);
-                        printw("%lc", get_unicode_caret(i));
-                        move(y, p);
-                        refresh();
-                        std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
-                    }
-                    nccoff(theme.caret_pair);
-                }
-            }
-
+            animate_caret(y, p, forwards, theme, "mode words");
 
             cleart(theme);
             std::int_fast32_t i = 0;
