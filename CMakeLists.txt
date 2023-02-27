@@ -3,13 +3,13 @@ cmake_minimum_required(VERSION 3.25)
 
 project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
-# include(FetchContent)
-# FetchContent_Declare(rapidfuzz
-#   GIT_REPOSITORY https://github.com/maxbachmann/rapidfuzz-cpp.git
-#   GIT_TAG main)
-# FetchContent_MakeAvailable(rapidfuzz)
+include(FetchContent)
+FetchContent_Declare(rapidfuzz
+  GIT_REPOSITORY https://github.com/maxbachmann/rapidfuzz-cpp.git
+  GIT_TAG main
 
-add_subdirectory(libs/rapidfuzz-cpp)
+)
+FetchContent_MakeAvailable(rapidfuzz)
 
 # Create an executable
 add_executable(${PROJECT_NAME}
