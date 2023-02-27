@@ -39,6 +39,13 @@ add_executable(${PROJECT_NAME}
     src/simian.cc
 )
  
+# Specify includes
+target_include_directories(${PROJECT_NAME} PRIVATE
+    libs
+    libs/src
+    _deps
+)
+ 
 # Linking libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ncursesw
@@ -50,13 +57,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 # These are output from ncursesw5-config --cflags --libs
 add_compile_definitions(DEFAULT_SOURCE XOPEN_SOURCE=600)
- 
-# Specify includes
-target_include_directories(${PROJECT_NAME} PUBLIC
-    libs
-    libs/src
-    _deps
-)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 20
