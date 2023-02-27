@@ -4,6 +4,6 @@
 [submodule "libs/rapidjson"]
     path = libs/rapidjson
     url = https://github.com/Tencent/rapidjson
-[submodule "3rdparty/RapidFuzz"]
-	path = 3rdparty/RapidFuzz
-	url = https://github.com/maxbachmann/rapidfuzz-cpp.git
+[submodule "libs/rapidfuzz-cpp"]
+	path = libs/rapidfuzz-cpp
+	url = https://github.com/maxbachmann/rapidfuzz-cpp
