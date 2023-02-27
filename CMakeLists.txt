@@ -53,6 +53,7 @@ add_compile_definitions(DEFAULT_SOURCE XOPEN_SOURCE=600)
  
 # Specify includes
 target_include_directories(${PROJECT_NAME} PUBLIC
+    libs
     libs/src
     _deps
 )

@@ -20,7 +20,7 @@
 #include <rapidjson/include/rapidjson/document.h>
 #include <rapidjson/include/rapidjson/filereadstream.h>
 
-#include <rapidfuzz-src/rapidfuzz/fuzz.hpp>
+#include <rapidfuzz/fuzz.hpp>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <cpp-httplib/httplib.h>
