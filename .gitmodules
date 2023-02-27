@@ -1,9 +1,0 @@
-[submodule "libs/cpp-httplib"]
-    path = libs/cpp-httplib
-    url = https://github.com/yhirose/cpp-httplib
-[submodule "libs/rapidjson"]
-    path = libs/rapidjson
-    url = https://github.com/Tencent/rapidjson
-[submodule "libs/rapidfuzz-cpp"]
-	path = libs/rapidfuzz-cpp
-	url = https://github.com/maxbachmann/rapidfuzz-cpp

@@ -17,13 +17,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "../libs/rapidjson/include/rapidjson/document.h"
-#include "../libs/rapidjson/include/rapidjson/filereadstream.h"
+#include <rapidjson/include/rapidjson/document.h>
+#include <rapidjson/include/rapidjson/filereadstream.h>
 
-#include "../libs/rapidfuzz-cpp/rapidfuzz/fuzz.hpp"
+#include <rapidfuzz-src/rapidfuzz/fuzz.hpp>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
-#include "../libs/cpp-httplib/httplib.h"
+#include <cpp-httplib/httplib.h>
 
 
 bool has_color = false;
