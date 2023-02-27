@@ -1,6 +1,6 @@
 [submodule "libs/cpp-httplib"]
     path = libs/cpp-httplib
-    url = https://github.com/yhirose/cpp-httlib
+    url = https://github.com/yhirose/cpp-httplib
 [submodule "libs/rapidjson"]
     path = libs/rapidjson
     url = https://github.com/Tencent/rapidjson
