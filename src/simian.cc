@@ -297,7 +297,8 @@ void outch(const chinfo_t &bchar, const Theme &theme) {
     }
 }
 
-void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::int32_t chars_covering, bool forwards, std::vector<std::uint64_t> &times, const Theme &theme, std::vector<chinfo_t> &buf, const std::string &origin) {
+template <std::size_t N>
+void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::int32_t chars_covering, bool forwards, std::vector<std::uint64_t> &times, const Theme &theme, std::vector<chinfo_t> &buf, std::int32_t pword, std::bitset<N> &incorrect_words, const std::string &origin) {
     static thread_local std::int32_t last_p = 0;
     const std::uint64_t rdcaret_wait = str_rdll("caret_wait", origin);
     if (str_rdb("smooth_caret", origin)) {
@@ -359,9 +360,23 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
             }
         }
         std::lock_guard guard(term_mutex);
+        std::int32_t cw = 0;
         std::int32_t ep = p + (static_cast<std::int32_t>(!forwards) - 1);
+        for (std::int32_t i = 0; i <= ep; i++) {
+            if (buf[i].ch == ' ') {
+                cw++;
+            }
+        }
+
+        if (incorrect_words[cw] && cw < pword && buf[ep].ch != ' ') {
+            attron(A_UNDERLINE);
+        }
+        curs_set(0);
         move(y, ep);
         outch(buf[ep], theme);
+        if (incorrect_words[cw] && cw < pword && buf[ep].ch != ' ') {
+            attroff(A_UNDERLINE);
+        }
         last_p = p;
     }
 
@@ -876,6 +891,8 @@ namespace modes {
         std::vector<std::uint64_t> times = {begin_time}; /* also protected by term_mutex */
         std::mutex term_mutex;
         std::atomic_bool forwards = true;
+        std::atomic_int pword = 0;
+        std::bitset<words_limit> incorrect_words;
         std::atomic_int x = 0, y = 0;
         timeout(0);
         auto anitl = [&](std::stop_token stoken) {
@@ -888,7 +905,7 @@ namespace modes {
                 }
                 if (last_p >= buf.size()) { return; }
                 /* now they've changed */
-                animate_caret(term_mutex, y, (last_p += static_cast<std::int16_t>(last_p < p) * 2 - 1), p - last_p, forwards, times, theme, buf, "mode words");
+                animate_caret(term_mutex, y, (last_p += static_cast<std::int16_t>(last_p < p) * 2 - 1), p - last_p, forwards, times, theme, buf, pword, incorrect_words, "mode words");
             }
         };
         std::jthread anit(anitl);
@@ -967,14 +984,46 @@ namespace modes {
                 std::lock_guard guard(term_mutex);
                 tbuf = buf;
             }
+            std::int32_t tpword = 0;
+            for (std::int32_t i = p - 1; i >= 0; i--) {
+                if (tbuf[i].ch == ' ') {
+                    tpword++;
+                }
+            }
+            pword = tpword;
 
-            std::int_fast32_t i = 0;
+            std::bitset<words_limit> incorrect_words;
+            std::int32_t cw = 0;
+            std::int32_t j = 0;
             for (const chinfo_t &bchar : tbuf) {
+                if (bchar.ch == ' ') {
+                    cw++;
+                    continue;
+                }
+                if (bchar.state == chstate::err || bchar.state == chstate::err_extra || (bchar.state == chstate::original && j < p - 1)) {
+                    incorrect_words[cw] = true;
+                }
+                j++;
+            }
+
+            std::int32_t i = 0;
+            cw = 0;
+            for (const chinfo_t &bchar : tbuf) {
+                if (bchar.ch == ' ') {
+                    cw++;
+                }
+
                 {
                     std::lock_guard guard(term_mutex);
+                    if (incorrect_words[cw] && cw < pword && bchar.ch != ' ') {
+                        attron(A_UNDERLINE);
+                    }
                     curs_set(0);
                     move(0, i);
                     outch(bchar, theme);
+                    if (incorrect_words[cw] && cw < pword && bchar.ch != ' ') {
+                        attroff(A_UNDERLINE);
+                    }
                 }
                 i++;
             }

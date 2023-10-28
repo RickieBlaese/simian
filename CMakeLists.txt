@@ -1,10 +1,20 @@
 cmake_minimum_required(VERSION 3.25)
 
 
-project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
+project(simian VERSION 0.4.1 DESCRIPTION "monkeytype in terminal")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_TYPE Debug)
+
+find_package(PkgConfig REQUIRED)
+pkg_search_module(OPENSSL REQUIRED openssl)
+
+if( OPENSSL_FOUND )
+    include_directories(${OPENSSL_INCLUDE_DIRS})
+    message(STATUS "Using OpenSSL ${OPENSSL_VERSION}")
+else()
+    # Error; with REQUIRED, pkg_search_module() will throw an error by it's own
+endif()
 
 include(FetchContent)
 include(ExternalProject)
