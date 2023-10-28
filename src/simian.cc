@@ -42,6 +42,7 @@ struct chinfo_t {
 bool has_color = false;
 
 const std::string CONFIG_FILENAME = "main.conf";
+const std::string LOG_FILENAME = "main.log";
 
 /* https://vi.stackexchange.com/questions/25151/how-to-change-vim-cursor-shape-in-text-console */
 /* but remember to invert output if animating 2nd half !! */
@@ -998,6 +999,10 @@ namespace modes {
 
         /* this is actually the incorrect way to calculate it, check https://monkeytype.com/about */
         const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
+
+        std::ofstream logf(LOG_FILENAME, std::ios_base::app);
+        logf << std::format("{:%FT%TZ}", std::chrono::system_clock::now()) << " | " << (broken ? "broken " : "") << "words " << words_limit << ": " << wpm << '\n';
+        logf.close();
 
         return ask_again(pwin, broken, wpm, theme);
     }
