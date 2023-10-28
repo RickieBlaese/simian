@@ -368,10 +368,10 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
             }
         }
 
+        curs_set(0);
         if (incorrect_words[cw] && cw < pword && buf[ep].ch != ' ') {
             attron(A_UNDERLINE);
         }
-        curs_set(0);
         move(y, ep);
         outch(buf[ep], theme);
         if (incorrect_words[cw] && cw < pword && buf[ep].ch != ' ') {
