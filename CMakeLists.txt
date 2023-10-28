@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.25)
 project(simian VERSION 0.3 DESCRIPTION "monkeytype in terminal")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_BUILD_TYPE Debug)
 
 include(FetchContent)
 include(ExternalProject)
@@ -70,4 +71,3 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
-

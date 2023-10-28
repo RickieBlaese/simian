@@ -1,17 +1,20 @@
 #include <algorithm>
 #include <array>
+#include <barrier>
 #include <chrono>
-#include <cstdint>
-#include <clocale>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <iostream>
+#include <thread>
 #include <sstream>
 #include <random>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <cstdint>
+#include <clocale>
 
 #include <ncurses.h>
 #include <sys/stat.h>
@@ -27,6 +30,15 @@
 
 
 
+enum chstate : unsigned int {
+    original, correct, err, err_extra
+};
+
+struct chinfo_t {
+    char ch;
+    chstate state = chstate::original;
+};
+
 bool has_color = false;
 
 const std::string CONFIG_FILENAME = "main.conf";
@@ -38,14 +50,27 @@ wchar_t get_unicode_caret(std::uint32_t index) {
     return cs[index];
 }
 
+std::uint64_t get_current_time_ns() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
+
+void cubic_bezier(double t, double x1, double y1, double x2, double y2, double &ox, double &oy) {
+    ox = 3.0 * (1.0 - t) * (1.0 - t) * t * x1 + 3 * (1.0 - t) * t * t * x2 + t * t * t;
+    oy = 3.0 * (1.0 - t) * (1.0 - t) * t * y1 + 3 * (1.0 - t) * t * t * y2 + t * t * t;
+}
+
+void ease(double t, double &ox, double &oy) {
+    cubic_bezier(t, 0.25, 0.1, 0.25, 1.0, ox, oy);
+}
+
 template <typename T>
-T coeff_variation(const std::vector<T>& samples) {
+T coeff_variation(const std::vector<T> &samples) {
     
     const std::size_t sz = samples.size();
     if (sz <= 1) { return 0.0; }
     const T mean = std::accumulate(samples.begin(), samples.end(), 0.0) / sz;
 
-    auto variance_func = [&mean, &sz](T accumulator, const T& val) {
+    auto variance_func = [&mean, &sz](T accumulator, const T &val) {
         return accumulator + ((val - mean) * (val - mean) / (sz - 1));
     };
 
@@ -82,14 +107,14 @@ std::unordered_map<std::string, std::string> config = {
 
 /* copied from rapidfuzz github */
 template <typename Sentence1, typename Iterable, typename Sentence2 = typename Iterable::value_type>
-std::optional<std::pair<Sentence2, double>> extract_one(const Sentence1& query, const Iterable& choices, const double score_cutoff = 0.0) {
+std::optional<std::pair<Sentence2, double>> extract_one(const Sentence1 &query, const Iterable &choices, const double score_cutoff = 0.0) {
     bool match_found = false;
     double best_score = score_cutoff;
     Sentence2 best_match;
 
     rapidfuzz::fuzz::CachedPartialRatio<typename Sentence1::value_type> scorer(query);
 
-    for (const auto& choice : choices) {
+    for (const auto &choice : choices) {
         double score = scorer.similarity(choice, best_score);
 
         if (score >= best_score) {
@@ -106,13 +131,13 @@ std::optional<std::pair<Sentence2, double>> extract_one(const Sentence1& query, 
     return std::make_pair(best_match, best_score);
 }
 
-bool str_startswith(const std::string& src, const std::string& match) {
+bool str_startswith(const std::string &src, const std::string &match) {
     return src.length() >= match.length() ? src.substr(0, match.length()) == match : false;
 }
 
 
 
-RGB strhex_to_rgb(const std::string& hexv) {
+RGB strhex_to_rgb(const std::string &hexv) {
     std::uint16_t r = 0, g = 0, b = 0;
     RGB ret{};
     std::uint8_t res = 0;
@@ -148,13 +173,13 @@ enum CursorType : unsigned int {
     blinking_underline, steady_underline, blinking_bar_xterm, steady_bar_xterm
 };
 
-void set_cursor_type(const CursorType& ct) {
+void set_cursor_type(const CursorType &ct) {
     const std::string out = "\33[" + std::to_string(ct) + " q";
     /* using write directly here just in case, we want to get around ncurses all the way */
     write(1, out.c_str(), out.length());
 }
 
-bool file_exists(const std::string& filename) {
+bool file_exists(const std::string &filename) {
     struct stat buffer{};
     return !stat(filename.c_str(), &buffer);
 }
@@ -180,7 +205,7 @@ void deinit_ncurses() {
 static constexpr long double chars_per_word = 5.0;
 
 
-void split(const std::string& s, const std::string& delim, std::vector<std::string>& outs) {
+void split(const std::string &s, const std::string &delim, std::vector<std::string> &outs) {
     std::size_t last = 0, next = 0;
     while ((next = s.find(delim, last)) != std::string::npos) {
         outs.push_back(s.substr(last, next - last));
@@ -189,7 +214,7 @@ void split(const std::string& s, const std::string& delim, std::vector<std::stri
     if (last != s.size()) { outs.push_back(s.substr(last, s.size())); }
 }
 
-void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const RGB& fg, const RGB& bg) {
+void pair_init(std::int16_t pairid, std::int16_t cid2, std::int16_t cid3, const RGB &fg, const RGB &bg) {
     /* TODO: maybe check if pair already in use through pair_content ? and adjust if necessary */
     static constexpr double m = 125.0 / 32.0; /* init_color accepts rgb from 0 to 1000 */
     init_color(cid2, static_cast<std::int16_t>(std::round(fg.r * m)), static_cast<std::int16_t>(std::round(fg.g * m)), static_cast<std::int16_t>(std::round(fg.b * m)));
@@ -219,15 +244,15 @@ void nccoff(std::int16_t pairid) {
 }
 
 /* origin is for error msgs, report where it was called from and what was read */
-bool str_rdb(const std::string& name, const std::string& origin) {
+bool str_rdb(const std::string &name, const std::string &origin) {
     std::string confs = config[name];
     std::transform(confs.begin(), confs.end(), confs.begin(), [](unsigned char c) { return std::tolower(c); });
 
-    if (str_startswith(confs, "true") || str_startswith(confs, "y")) {
+    if (str_startswith(confs, "tru") || str_startswith(confs, "y")) {
         return true;
     }
 
-    if (str_startswith(confs, "false") || str_startswith(confs, "no")) {
+    if (str_startswith(confs, "fals") || str_startswith(confs, "no")) {
         return false;
     }
 
@@ -237,12 +262,12 @@ bool str_rdb(const std::string& name, const std::string& origin) {
 }
 
 /* origin is for error msgs, report where it was called from and what was read */
-std::int64_t str_rdll(const std::string& name, const std::string& origin) {
+std::int64_t str_rdll(const std::string &name, const std::string &origin) {
     std::string confs = config[name];
     std::int64_t r = 0;
     try {
         r = std::stoll(confs);
-    } catch (std::exception& e) {
+    } catch (std::exception &e) {
         deinit_ncurses();
         std::cerr << "fatal: " << origin << ": failed to convert option " << name << " value \"" << confs << "\" to long long\n";
         exit(1);
@@ -251,59 +276,115 @@ std::int64_t str_rdll(const std::string& name, const std::string& origin) {
     return r;
 }
 
-void animate_caret(std::int32_t y, std::int32_t p, bool forwards, const Theme& theme, const std::string& origin) {
-    if (str_rdb("smooth_caret", origin)) {
-        const std::int64_t caret_wait = str_rdll("caret_wait", origin);
-        if (p > 0 && forwards) {
-            nccon(theme.caret_pair);
-            for (int i = 0; i < 8; i++) {
-                move(y, p - 1);
-                printw("%lc", get_unicode_caret(i));
-                move(y, p - 1);
-                refresh();
-                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
-            }
-            nccoff(theme.caret_pair);
+void outch(const chinfo_t &bchar, const Theme &theme) {
+    if (bchar.state == chstate::err) {
+        nccon(theme.colorful_error_pair);
+        addch(bchar.ch);
+        nccoff(theme.colorful_error_pair);
+    } else if (bchar.state == chstate::err_extra) {
+        nccon(theme.colorful_error_extra_pair);
+        addch(bchar.ch);
+        nccoff(theme.colorful_error_extra_pair);
+    } else if (bchar.state == chstate::correct) {
+        nccon(theme.main_pair);
+        addch(bchar.ch);
+        nccoff(theme.main_pair);
+    } else {
+        nccon(theme.sub_pair);
+        addch(bchar.ch);
+        nccoff(theme.sub_pair);
+    }
+}
 
-            nccon(theme.caret_inverse_pair);
-            for (int i = 0; i < 7; i++) {
-                move(y, p - 1);
-                printw("%lc", get_unicode_caret(i));
-                move(y, p - 1);
-                refresh();
-                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::int32_t chars_covering, bool forwards, std::vector<std::uint64_t> &times, const Theme &theme, std::vector<chinfo_t> &buf, const std::string &origin) {
+    static thread_local std::int32_t last_p = 0;
+    const std::uint64_t rdcaret_wait = str_rdll("caret_wait", origin);
+    if (str_rdb("smooth_caret", origin)) {
+        auto caret_wait = [&]() -> std::uint64_t {
+            std::lock_guard guard(term_mutex);
+            const std::uint64_t times_wait = (times.size() > 1 ? (times[times.size() - 1] - times[times.size() - 2]) / ((static_cast<std::int32_t>(forwards) * 2 - 1) * (chars_covering) * 15'000) : rdcaret_wait);
+            return std::min<std::uint64_t>(rdcaret_wait, times_wait);
+        };
+        if (p > 0 && forwards) {
+            for (int i = 0; i < 8; i++) {
+                {
+                    std::lock_guard guard(term_mutex);
+                    move(y, p - 1);
+                    nccon(theme.caret_pair);
+                    printw("%lc", get_unicode_caret(i));
+                    nccoff(theme.caret_pair);
+                    move(y, p - 1);
+                    refresh();
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
             }
-            nccoff(theme.caret_inverse_pair);
+            for (int i = 0; i < 7; i++) {
+                {
+                    std::lock_guard guard(term_mutex);
+                    move(y, p - 1);
+                    nccon(theme.caret_inverse_pair);
+                    printw("%lc", get_unicode_caret(i));
+                    nccoff(theme.caret_inverse_pair);
+                    move(y, p - 1);
+                    refresh();
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
+            }
 
         } else if (!forwards) {
-            nccon(theme.caret_inverse_pair);
             for (int i = 7; i >= 0; i--) {
-                move(y, p);
-                printw("%lc", get_unicode_caret(i));
-                move(y, p);
-                refresh();
-                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+                {
+                    std::lock_guard guard(term_mutex);
+                    move(y, p);
+                    nccon(theme.caret_inverse_pair);
+                    printw("%lc", get_unicode_caret(i));
+                    nccoff(theme.caret_inverse_pair);
+                    move(y, p);
+                    refresh();
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
             }
-            nccoff(theme.caret_inverse_pair);
-
-            nccon(theme.caret_pair);
             for (int i = 7; i >= 1; i--) {
-                move(y, p);
-                printw("%lc", get_unicode_caret(i));
-                move(y, p);
-                refresh();
-                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait));
+                {
+                    std::lock_guard guard(term_mutex);
+                    move(y, p);
+                    nccon(theme.caret_pair);
+                    printw("%lc", get_unicode_caret(i));
+                    nccoff(theme.caret_pair);
+                    move(y, p);
+                    refresh();
+                }
+                std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
             }
-            nccoff(theme.caret_pair);
         }
+        std::lock_guard guard(term_mutex);
+        std::int32_t ep = p + (static_cast<std::int32_t>(!forwards) - 1);
+        move(y, ep);
+        outch(buf[ep], theme);
+        last_p = p;
     }
+
+    std::lock_guard guard(term_mutex);
+    if (str_rdb("xterm_support", "mode words")) {
+        curs_set(1);
+        move(y, p);
+        set_cursor_type(CursorType::steady_bar_xterm);
+    } else {
+        curs_set(0);
+        nccon(theme.caret_pair);
+        if (p > 0) {
+            mvprintw(y, p - 1, "%lc", get_unicode_caret(8));
+        }
+        nccoff(theme.caret_pair);
+    }
+    refresh();
 }
 
 
 /* will fetch from monkeytype if not exist locally */
 /* filename should not have beginning */
 /* origin is where it is called from for errors */
-void fetch_file(const std::string& filename, const std::string& origin) {
+void fetch_file(const std::string &filename, const std::string &origin) {
     if (file_exists(filename)) {
         return;
     }
@@ -341,7 +422,7 @@ void fetch_file(const std::string& filename, const std::string& origin) {
     outfile.close();
 }
 
-std::string get_file_content(const std::string& filename) {
+std::string get_file_content(const std::string &filename) {
     std::ifstream file(filename);
     std::stringstream ss;
     ss << file.rdbuf();
@@ -350,7 +431,7 @@ std::string get_file_content(const std::string& filename) {
     return text;
 }
 
-void get_quotes(std::vector<std::string>& outs, Quote size) {
+void get_quotes(std::vector<std::string> &outs, Quote size) {
     /* "quotes": [ */
     /*     { */
     /*         "text": "You can't use the fire exit because you're not made of fire.", */
@@ -372,7 +453,7 @@ void get_quotes(std::vector<std::string>& outs, Quote size) {
     std::fclose(pfile);
     delete[] contents;
     std::int32_t group_begin = doc["groups"][size][0].GetInt(), group_end = doc["groups"][size][1].GetInt();
-    for (const auto& quote : doc["quotes"].GetArray()) {
+    for (const auto &quote : doc["quotes"].GetArray()) {
         const rapidjson::SizeType len = quote["text"].GetStringLength();
         if (len >= group_begin && len < group_end) {
             outs.emplace_back(quote["text"].GetString());
@@ -380,7 +461,7 @@ void get_quotes(std::vector<std::string>& outs, Quote size) {
     }
 }
 
-void get_words(std::vector<std::string>& outs) {
+void get_words(std::vector<std::string> &outs) {
     const std::string words_filename = "languages/" + config["language"] + ".json";
     fetch_file(words_filename, "get_words");
     std::FILE *pfile = std::fopen(words_filename.c_str(), "r");
@@ -389,7 +470,7 @@ void get_words(std::vector<std::string>& outs) {
     char *contents = new char[fsize];
     rapidjson::FileReadStream frs(pfile, contents, fsize);
     doc.ParseStream(frs);
-    for (const auto& word : doc["words"].GetArray()) {
+    for (const auto &word : doc["words"].GetArray()) {
         outs.emplace_back(word.GetString());
     }
     std::fclose(pfile);
@@ -397,7 +478,7 @@ void get_words(std::vector<std::string>& outs) {
 }
 
 
-void get_themes_list(std::vector<std::string>& outs) {
+void get_themes_list(std::vector<std::string> &outs) {
     /* [ */
     /*     { */
     /*         "name": "oblivion", */
@@ -416,7 +497,7 @@ void get_themes_list(std::vector<std::string>& outs) {
     char *contents = new char[size];
     rapidjson::FileReadStream frs(pfile, contents, size);
     doc.ParseStream(frs);
-    for (const auto& theme : doc.GetArray()) {
+    for (const auto &theme : doc.GetArray()) {
         outs.emplace_back(theme["name"].GetString());
     }
     std::fclose(pfile);
@@ -424,7 +505,7 @@ void get_themes_list(std::vector<std::string>& outs) {
 }
 
 /* will assign color ids up to base + 30, color pairs up to base + 32 */
-void assign_theme(const std::int16_t& base, Theme& theme) {
+void assign_theme(const std::int16_t &base, Theme &theme) {
     /* NOLINTBEGIN */
     pair_init(base, base + 1, base + 2, theme.main, theme.bg);
     theme.main_pair = base;
@@ -454,7 +535,7 @@ void assign_theme(const std::int16_t& base, Theme& theme) {
 }
 
 
-void get_theme(const std::string& name, Theme& theme) {
+void get_theme(const std::string &name, Theme &theme) {
     const std::string theme_filename = "themes/" + name + ".css";
     std::string text;
 
@@ -473,9 +554,9 @@ void get_theme(const std::string& name, Theme& theme) {
     /* parse this better, not all css define in the same order */
     std::vector<std::string> fcolors, tcolors, colors;
     std::size_t beginb = text.find(":root{") + 5, endb = text.find('}', beginb);
-    text = text.substr(beginb + 1, endb - beginb);
+    text = text.substr(beginb + 1, endb - beginb - 1);
     split(text, ";", fcolors);
-    for (const std::string& f : fcolors) {
+    for (const std::string &f : fcolors) {
         std::size_t beginh = f.find('#') + 1, beginn = f.find("--") + 2;
         std::string cname = f.substr(beginn, f.find(':') - 6 - beginn); /* 6 is width of "-color" suffix */
         RGB color = strhex_to_rgb(f.substr(beginh));
@@ -493,17 +574,15 @@ void get_theme(const std::string& name, Theme& theme) {
         else if (cname == "colorful-error-extra") { theme.colorful_error_extra = color; }
         else {
             deinit_ncurses();
-            std::cerr << "fatal: get_theme: parsing theme " << name << " failed near \"" << f << "\"\n";
+            std::cerr << "fatal: get_theme: parsing theme " << name << " failed near \"" << f << "\" - color name \"" << cname << "\" not found\n";
             exit(1);
         }
-
     }
-
     /* just hope that the color ids don't conflict with terminal */
     assign_theme(static_cast<std::int16_t>(str_rdll("base_color_id", "get_theme")), theme);
 }
 
-void cleart(const Theme& theme) {
+void cleart(const Theme &theme) {
     nccon(theme.bg_pair);
     for (std::int_fast32_t r = 0; r < LINES; r++) {
         for (std::int_fast32_t c = 0; c < COLS; c++) {
@@ -526,7 +605,7 @@ chtype wait_for_char(chtype chr) {
 }
 
 /* haha */
-void addnamestr(const Theme& theme) {
+void addnamestr(const Theme &theme) {
     nccon(theme.text_pair);
     addstr("simian");
     nccoff(theme.text_pair);
@@ -552,12 +631,12 @@ std::ifstream::pos_type filesize(const char *filename) {
     return r; 
 }
 
-long double rounddouble(const long double& num, std::int32_t places) {
+long double rounddouble(const long double &num, std::int32_t places) {
     const long double coeff = std::pow(10, places);
     return std::round(num * coeff) / coeff;
 }
 
-inline std::int64_t roundlong(const long double& num) {
+inline std::int64_t roundlong(const long double &num) {
     return static_cast<std::int64_t>(std::round(num));
 }
 
@@ -778,13 +857,13 @@ namespace modes {
         addstr(out.c_str());
         move(0, 0);
         refresh();
-        std::vector<std::pair<char, bool /* is error */>> buf;
+        std::vector<chinfo_t> buf;
         buf.reserve(out.size());
         for (char c : out) {
-            buf.emplace_back(c, false);
+            buf.push_back(chinfo_t{.ch = c, .state = chstate::original});
         }
 
-        std::int32_t p = 0;
+        std::atomic_int32_t p = 0;
         std::uint64_t start = 0;
         bool started = false;
         bool broken = false;
@@ -792,104 +871,132 @@ namespace modes {
 
         curs_set(0);
 
-        /* putting off total rewrite with nonblocking getch */
+        std::uint64_t begin_time = get_current_time_ns();
+        std::vector<std::uint64_t> times = {begin_time}; /* also protected by term_mutex */
+        std::mutex term_mutex;
+        std::atomic_bool forwards = true;
+        std::atomic_int x = 0, y = 0;
+        timeout(0);
+        auto anitl = [&](std::stop_token stoken) {
+            std::int32_t last_p = p;
+            while (!stoken.stop_requested()) {
+                while (last_p == p) {
+                    if (stoken.stop_requested()) {
+                        return;
+                    }
+                }
+                if (last_p >= buf.size()) { return; }
+                /* now they've changed */
+                animate_caret(term_mutex, y, (last_p += static_cast<std::int16_t>(last_p < p) * 2 - 1), p - last_p, forwards, times, theme, buf, "mode words");
+            }
+        };
+        std::jthread anit(anitl);
         while (p < buf.size()) {
-            chtype chin = getch();
-
+            chtype chin = ERR;
+            while (chin == ERR) {
+                std::lock_guard guard(term_mutex);
+                chin = getch();
+            }
+            {
+                std::lock_guard guard(term_mutex);
+                times.push_back(get_current_time_ns());
+            }
+            
             if (chin == KEY_DL || chin == '\t') {
                 broken = true;
                 break;
             }
-            
+
             if (chin == '\n') {
                 continue;
             }
 
-            int x = 0, y = 0;
-            getyx(pwin, y, x);
-            bool forwards = true;
+            std::uint32_t spaces_end = 0;
+
+            x = 0;
+            y = 0;
+            {
+                std::lock_guard guard(term_mutex);
+                getyx(pwin, y, x);
+            }
+            forwards = true;
             if (chin == KEY_BACKSPACE) {
                 if (p <= 0) { continue; }
-                if (buf[p - 1].second) {
+                if (buf[p - 1].state == chstate::err || buf[p - 1].state == chstate::correct) {
+                    buf[p - 1].state = chstate::original;
+                }
+                if (buf[p].ch == ' ' && buf[p - 1].state == chstate::err_extra) {
                     buf.erase(buf.begin() + p - 1);
+                    spaces_end++;
                 }
                 p--;
                 forwards = false;
             } else {
-                if (chin != buf[p].first) {
-                    buf.insert(buf.begin() + p, std::make_pair(static_cast<char>(chin), true));
+                if (chin != buf[p].ch) {
+                    if (chin == ' ') {
+                        if (p > 0 ? buf[p - 1].ch == ' ' : true) {
+                            continue;
+                        }
+                        std::int32_t k = p;
+                        for (; k < buf.size() && buf[k].ch != ' '; k++) {;}
+                        p = k;
+                    } else if (p == buf.size() || buf[p].ch == ' ') {
+                        buf.insert(buf.begin() + p, chinfo_t{.ch = static_cast<char>(chin), .state = chstate::err_extra});
+                    } else {
+                        char_count++;
+                        buf[p].state = chstate::err;
+                    }
                 } else {
+                    buf[p].state = chstate::correct;
                     char_count++;
                 }
 
                 if (!started) {
+                    start = get_current_time_ns();
                     started = true;
-                    start = current_time();
                 }
 
                 p++;
             }
 
 
-            auto outch = [&theme](const std::pair<char, bool>& bchar, bool correct) {
-                char ch = bchar.first;
-                bool err = bchar.second;
-
-                if (err) {
-                    nccon(theme.colorful_error_pair);
-                    addch(ch);
-                    nccoff(theme.colorful_error_pair);
-                } else if (correct) {
-                    nccon(theme.main_pair);
-                    addch(ch);
-                    nccoff(theme.main_pair);
-                } else {
-                    nccon(theme.sub_pair);
-                    addch(ch);
-                    nccoff(theme.sub_pair);
-                }
-            };
-
-            
+            decltype(buf) tbuf;
             /* both second halves of animation ignore last caret to decrease visual blinking of letters */
-            curs_set(0);
+            {
+                std::lock_guard guard(term_mutex);
+                tbuf = buf;
+            }
 
-            const std::int32_t ep = -static_cast<std::int32_t>(forwards) * 2 + 1 + p; /* either + 1 or - 1 */
-
-            /* to erase artifacts from last dangling thin caret */
-            move(y, ep);
-            outch(buf[ep], true);
-
-            animate_caret(y, p, forwards, theme, "mode words");
-
-            cleart(theme);
             std::int_fast32_t i = 0;
-            for (const std::pair<char, bool>& bchar : buf) {
-                outch(bchar, i < p);
+            for (const chinfo_t &bchar : tbuf) {
+                {
+                    std::lock_guard guard(term_mutex);
+                    curs_set(0);
+                    move(0, i);
+                    outch(bchar, theme);
+                }
                 i++;
             }
-
-            if (str_rdb("xterm_support", "mode words")) {
-                curs_set(1);
-                move(y, p);
-                set_cursor_type(CursorType::steady_bar_xterm);
-            } else {
+            {
+                std::lock_guard guard(term_mutex);
                 curs_set(0);
-                nccon(theme.caret_pair);
-                if (p > 0) {
-                    mvprintw(y, p - 1, "%lc", get_unicode_caret(8));
-                }
-                nccoff(theme.caret_pair);
+                move(0, i);
+                addstr(std::string(spaces_end, ' ').c_str());
             }
 
+            std::lock_guard guard(term_mutex);
             refresh();
         }
+
+        anit.request_stop();
+        anit.join();
 
         set_cursor_type(CursorType::steady_block);
 
         nccoff(theme.sub_pair);
+        timeout(-1);
 
-        /* this is actually the incorrect way to calculate it, https://monkeytype.com/about */
+        /* this is actually the incorrect way to calculate it, check https://monkeytype.com/about */
         const long double wpm = static_cast<long double>(char_count) * (static_cast<long double>(std::nano::den * 60) / ((current_time() - start) * chars_per_word));
 
         return ask_again(pwin, broken, wpm, theme);
@@ -902,9 +1009,11 @@ namespace modes {
         std::uint64_t start = 0;
         std::uint16_t curx = 0;
         std::uint16_t cury = 0;
+        std::vector<std::int32_t> line_lengths;
 
         chtype chin = '\0';
         bool started = false;
+        std::int32_t this_line_length = 0;
 
         curs_set(1);
         while (chin != '\t') {
@@ -917,12 +1026,20 @@ namespace modes {
                 getyx(pwin, cury, curx);
                 if (curx > 0) {
                     mvaddch(cury, curx - 1, ' ');
+                    this_line_length--;
                     move(cury, curx - 1);
+                } else if (cury > 0) {
+                    move(cury - 1, *line_lengths.rbegin());
+                    this_line_length = *line_lengths.rbegin();
+                    line_lengths.erase(line_lengths.end() - 1);
                 }
             } else if (chin == '\n') {
                 addnewline(pwin);
+                line_lengths.push_back(this_line_length);
+                this_line_length = 0;
             } else {
                 addch(chin);
+                this_line_length++;
                 char_count++;
             }
             
