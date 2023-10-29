@@ -311,11 +311,12 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
             for (int i = 0; i < 8; i++) {
                 {
                     std::lock_guard guard(term_mutex);
-                    move(y, p - 1);
+                    curs_set(0);
+                    move(y + (p - 1) / COLS, (p - 1) % COLS);
                     nccon(theme.caret_pair);
                     printw("%lc", get_unicode_caret(i));
                     nccoff(theme.caret_pair);
-                    move(y, p - 1);
+                    move(y + (p - 1) / COLS, (p - 1) % COLS);
                     refresh();
                 }
                 std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
@@ -323,11 +324,12 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
             for (int i = 0; i < 7; i++) {
                 {
                     std::lock_guard guard(term_mutex);
-                    move(y, p - 1);
+                    curs_set(0);
+                    move(y + (p - 1) / COLS, (p - 1) % COLS);
                     nccon(theme.caret_inverse_pair);
                     printw("%lc", get_unicode_caret(i));
                     nccoff(theme.caret_inverse_pair);
-                    move(y, p - 1);
+                    move(y + (p - 1) / COLS, (p - 1) % COLS);
                     refresh();
                 }
                 std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
@@ -337,11 +339,12 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
             for (int i = 7; i >= 0; i--) {
                 {
                     std::lock_guard guard(term_mutex);
-                    move(y, p);
+                    curs_set(0);
+                    move(y + p / COLS, p % COLS);
                     nccon(theme.caret_inverse_pair);
                     printw("%lc", get_unicode_caret(i));
                     nccoff(theme.caret_inverse_pair);
-                    move(y, p);
+                    move(y + p / COLS, p % COLS);
                     refresh();
                 }
                 std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
@@ -349,11 +352,12 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
             for (int i = 7; i >= 1; i--) {
                 {
                     std::lock_guard guard(term_mutex);
-                    move(y, p);
+                    curs_set(0);
+                    move(y + p / COLS, p % COLS);
                     nccon(theme.caret_pair);
                     printw("%lc", get_unicode_caret(i));
                     nccoff(theme.caret_pair);
-                    move(y, p);
+                    move(y + p / COLS, p % COLS);
                     refresh();
                 }
                 std::this_thread::sleep_for(std::chrono::microseconds(caret_wait()));
@@ -372,7 +376,7 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
         if (incorrect_words[cw] && cw < pword && buf[ep].ch != ' ') {
             attron(A_UNDERLINE);
         }
-        move(y, ep);
+        move(y + ep / COLS, ep % COLS);
         outch(buf[ep], theme);
         if (incorrect_words[cw] && cw < pword && buf[ep].ch != ' ') {
             attroff(A_UNDERLINE);
@@ -383,13 +387,13 @@ void animate_caret(std::mutex &term_mutex, std::int32_t y, std::int32_t p, std::
     std::lock_guard guard(term_mutex);
     if (str_rdb("xterm_support", "mode words")) {
         curs_set(1);
-        move(y, p);
+        move(y + p / COLS, p % COLS);
         set_cursor_type(CursorType::steady_bar_xterm);
     } else {
         curs_set(0);
         nccon(theme.caret_pair);
         if (p > 0) {
-            mvprintw(y, p - 1, "%lc", get_unicode_caret(8));
+            mvprintw(y + p / COLS, p - 1, "%lc", get_unicode_caret(8));
         }
         nccoff(theme.caret_pair);
     }
