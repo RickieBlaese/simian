@@ -28,6 +28,11 @@
 
 #include <libs/src/rapidfuzz-cpp/rapidfuzz/fuzz.hpp>
 
+#ifdef _WIN32
+#define FUNCSIG __FUNCSIG__
+#else
+#define FUNCSIG __PRETTY_FUNCTION__
+#endif
 
 
 enum chstate : unsigned int {
@@ -64,6 +69,7 @@ void ease(double t, double &ox, double &oy) {
     cubic_bezier(t, 0.25, 0.1, 0.25, 1.0, ox, oy);
 }
 
+
 template <typename T>
 T coeff_variation(const std::vector<T> &samples) {
     
@@ -82,7 +88,47 @@ struct RGB {
     std::uint16_t r, g, b;
 };
 
+double hue_to_rgb(double p, double q, double t) {
+    if (t < 0.0) {
+        t += 1.0;
+    }
+    if (t > 1.0) {
+        t -= 1.0;
+    }
+    if (t < 1.0 / 6.0) {
+        return p + (q - p) * 6.0 * t;
+    }
+    if (t < 1.0 / 2.0) {
+        return q;
+    }
+    if (t < 2.0 / 3.0) {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
+    return p;
+}
+
+std::uint16_t to255(double v) { return static_cast<std::uint16_t>(std::min(255.0, 256.0 * v)); }
+
+RGB hsl_to_rgb(double h, double s, double l) {
+    double r, g, b;
+
+    if (s == 0.0) {
+        r = g = b = l; // achromatic
+    } else {
+        double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        double p = 2 * l - q;
+        r = hue_to_rgb(p, q, h + 1.0 / 3.0);
+        g = hue_to_rgb(p, q, h);
+        b = hue_to_rgb(p, q, h - 1.0 / 3.0);
+    }
+    RGB rgb = {to255(r), to255(g), to255(b)};
+    return rgb;
+}
+
+
+
 struct Theme {
+    std::string name;
     /* main is used for correct letters, caret is for caret color, text is used for slightly standout text, sub is used for other text color, bg is background color, colorful_error is general error color, and colorful_error_extra is used for incorrect letters typed outside of a word */
     RGB main, caret, sub, sub_alt, bg,
         text, error, error_extra, colorful_error, colorful_error_extra; /* colorful = colorful */
@@ -287,6 +333,10 @@ void outch(const chinfo_t &bchar, const Theme &theme) {
         addch(bchar.ch);
         nccoff(theme.colorful_error_extra_pair);
     } else if (bchar.state == chstate::correct) {
+        /* RGB rgb = hsl_to_rgb(static_cast<double>(static_cast<long double>(get_current_time_ns()) / 1000000.0L), 1.0, 0.5);
+        if (theme.name == "rgb") {
+            addstr((std::string("\x1b[38;2;") + std::to_string(rgb.r) + ";" + std::to_string(rgb.g) + ";" + std::to_string(rgb.b) + "m").c_str());
+        } */
         nccon(theme.main_pair);
         addch(bchar.ch);
         nccoff(theme.main_pair);
@@ -598,6 +648,9 @@ void get_theme(const std::string &name, Theme &theme) {
             exit(1);
         }
     }
+
+    theme.name = name;
+
     /* just hope that the color ids don't conflict with terminal */
     assign_theme(static_cast<std::int16_t>(str_rdll("base_color_id", "get_theme")), theme);
 }
@@ -924,8 +977,12 @@ namespace modes {
                 times.push_back(get_current_time_ns());
             }
             
-            if (chin == KEY_DL || chin == '\t') {
+            if (chin == '\t') {
                 broken = true;
+                break;
+            }
+
+            if (chin == KEY_DC) {
                 break;
             }
 
